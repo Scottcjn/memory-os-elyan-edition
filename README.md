@@ -28,7 +28,7 @@ After months of hitting these walls in production, I built something that actual
 
 ## What Memory OS is
 
-Not just another plugin. A complete **memory operating system** — 6 layers working in concert, from flat files to a vector database, with surgical context injection and a knowledge pipeline that organizes itself.
+Not just another plugin. A complete **memory operating system** — 7 layers working in concert, from flat files to a vector database, with surgical context injection, a knowledge pipeline that organizes itself, **and an explicit Ground Truth hierarchy that tells the agent to actually use the injected memory**.
 
 Designed and refined by someone who ran headfirst into every limitation of stock Hermes and every existing memory solution.
 
@@ -37,7 +37,7 @@ Compatible with any LLM provider Hermes supports — OpenRouter, OpenAI, Anthrop
 
 ---
 
-## Architecture: 6 memory layers
+## Architecture: 7 memory layers
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -67,15 +67,39 @@ Compatible with any LLM provider Hermes supports — OpenRouter, OpenAI, Anthrop
 │  LAYER 6 · LLM WIKI                                               │
 │  Auto-curated vault: concepts/ · entities/ · comparisons/         │
 │  → Continuously ingested into Qdrant via wiki-continuous-ingest   │
+├──────────────────────────────────────────────────────────────────┤
+│  ⚡ LAYER 7 · GROUND TRUTH HIERARCHY (identity layer)              │
+│  SOUL.md · rulebook.md                                             │
+│  → Tells the agent that injected memory is authoritative           │
+│  → Without this, layers 2-6 deliver context the agent ignores     │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
 **How it flows:**
 
-`pre_llm_call` → surgical recall from all four sources (Fabric + Qdrant + Sessions + Facts)  
+`pre_llm_call` → surgical recall from all four sources (Fabric + Qdrant + Sessions + Facts)
+
+**But recall is not enough.** The agent must be explicitly instructed to treat this injected context as authoritative. That's what [Layer 7](layers/07-ground-truth.md) provides — without it, the agent rediscovers knowledge that's already in the prompt.
+
 `post_llm_call` + `on_session_end` → automatic learning extraction and capture
 
 Each source is gated by relevance thresholds. Per-session deduplication prevents the same context from appearing twice. A social-closer filter skips trivial messages entirely. No padding. No firehose. The LLM gets exactly what it needs — nothing more.
+
+---
+
+## Why Layer 7 is the most important layer
+
+Layers 1-6 ensure memory is **captured, stored, and injected**. Layer 7 ensures the injected memory is **used**.
+
+Without the Ground Truth hierarchy:
+- Qdrant points are injected but the agent calls the Qdrant API to verify them
+- Fabric entries are injected but the agent runs `fabric_recall` to re-find them  
+- Session history is injected but the agent runs `session_search` to re-discover it
+- Facts are injected but the agent probes `fact_store` to confirm them
+
+The result: **memory-zero behavior** despite perfect injection. Every rediscovery burns tokens, context, and time.
+
+→ **[Read Layer 7: Ground Truth Hierarchy](layers/07-ground-truth.md)** — the critical fix.
 
 ---
 
@@ -90,7 +114,8 @@ Each source is gated by relevance thresholds. Per-session deduplication prevents
 | Vector search | Not present | Qdrant hybrid + 4-level fallback cascade |
 | Cleanup and deduplication | Not present | Decay scanner + semantic dedup + archival |
 | Knowledge pipeline | Not present | Self-curating LLM Wiki |
-| Token efficiency | — | Surgical: gated retrieval + per-session dedup |
+| **Ground Truth hierarchy** | **Not present** | **Injected memory ranked as authoritative; agent must use context provided** |
+| Token efficiency | — | Surgical: gated retrieval + per-session dedup + no wasted rediscovery |
 | Infrastructure | — | Local memory stack (Qdrant + Redis + ARQ) + any LLM provider |
 
 ---
@@ -108,6 +133,7 @@ Because almost every modern memory solution is **cloud-first**. If you want real
 | Structured facts + trust scores | ✓ | Partial | ✗ | ✗ |
 | Self-curating wiki | ✓ | ✗ | ✗ | ✗ |
 | Intelligent decay + archival | ✓ | ✗ | ✗ | ✗ |
+| **Ground Truth hierarchy** | **✓** | **✗** | **✗** | **✗** |
 
 ---
 
