@@ -2,10 +2,10 @@
 
 ![Memory OS Banner](assets/banner.jpg)
 
-> **Your agent finally stops forgetting.**  
+> **Your agent finally stops forgetting.**  \
 > Permanent memory. Local memory infrastructure. API-provider agnostic. Surgically token-efficient.
 
-Six memory layers. Automatic, intelligent context injection. Structured facts with trust scoring. A self-curating wiki pipeline. Semantic search across **every conversation you've ever had**.
+Seven memory layers. Automatic, intelligent context injection. Structured facts with trust scoring. A self-curating wiki pipeline. Semantic search across **every conversation you've ever had**.
 
 Memory OS turns Hermes Agent into a real long-term collaborator — one that remembers your projects, your decisions, your reasoning, and brings exactly the right context back at exactly the right moment. Like talking to a colleague who was there for every session.
 
