@@ -2,8 +2,19 @@
 
 > **Service:** Qdrant 1.17+ (Docker)
 > **Collection:** `knowledge_base` (4096d Cosine + BM25 sparse)
-> **Embedding:** Qwen3-Embedding-8B via OpenRouter
+> **Embedding:** Qwen3-Embedding-8B via OpenRouter (default; configurable)
 > **Endpoint:** `http://localhost:6333`
+
+## Why Qwen3-Embedding-8B
+
+The default embedding model is **Qwen3-Embedding-8B** for four reasons:
+
+1. **Multilingual** — strong performance across 50+ languages, including Portuguese, Spanish, and other non-English content common in real-world agent use
+2. **Quality** — 4096-dimensional embeddings with high semantic fidelity; consistently ranks near the top of the MTEB leaderboard
+3. **Speed** — fast inference at 8B parameters, suitable for hourly ingestion pipelines without bottlenecking the ARQ worker
+4. **Cost** — affordable via OpenRouter ($0.025/1M tokens at time of writing); a full wiki re-index costs cents, not dollars
+
+Users can switch to any OpenAI-compatible embedding API by setting `EMBEDDING_API_BASE` and `EMBEDDING_MODEL` in `.env`. If changing models, ensure `EMBEDDING_DIMS` matches both the new model's output and the Qdrant collection schema.
 
 ## What it stores
 
@@ -75,7 +86,7 @@ Redis queue (ARQ job)
     │
     ▼
 ARQ Worker (Docker)
-    │ embed via Qwen3-Embedding-8B (OpenRouter)
+    │ embed via configured backend (default: Qwen3-Embedding-8B)
     │ get_sparse_embedding() → BM25 (fastembed, local)
     ▼
 Qdrant upsert (with dedup check)

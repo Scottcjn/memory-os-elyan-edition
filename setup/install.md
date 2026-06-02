@@ -7,7 +7,7 @@
 - Hermes Agent 0.14.0+ (tested on 0.15.2)
 - Python 3.11+
 - Docker 24.0+
-- OpenRouter API key (for embeddings and LLM extraction)
+- OpenRouter API key (or configured embedding backend — see [Layer 5: Qdrant](../layers/05-qdrant.md))
 - 16 GB RAM recommended (8 GB minimum)
 
 ## Installation
@@ -79,6 +79,10 @@ OPENROUTER_API_KEY=sk-or-...
 ICARUS_EXTRACTION_MAX_TOKENS=4096
 ICARUS_EXTRACTION_MODEL=deepseek/deepseek-v4-flash
 EMBEDDING_DIMS=4096
+
+# Optional — Embedding backend (defaults to OpenRouter)
+# EMBEDDING_API_BASE=https://openrouter.ai/api/v1
+# EMBEDDING_MODEL=qwen/qwen3-embedding-8b
 
 # Optional
 ICARUS_OBSIDIAN=1
