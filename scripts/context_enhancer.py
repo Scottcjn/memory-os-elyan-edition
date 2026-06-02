@@ -154,7 +154,7 @@ _INJECTION_PATTERNS_CE = [
     # Markdown/javascript data: URLs in links and images
     (re.compile(r"(?i)(javascript|data)\s*:"), "sanitized:"),
     # Known system prefixes
-    (re.compile(r"(?i)\[IMPORTANT:.*?\]|\[SYSTEM:.*?\]"), ""),
+    (re.compile(r"(?i)\[IMPORTANT:.*?\]|\[SYSTEM:.*?\]"), "[REDACTED]"),
     # Control characters (keep newlines and tabs)
     (re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]"), ""),
 ]

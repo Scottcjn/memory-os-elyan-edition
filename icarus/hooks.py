@@ -376,7 +376,7 @@ _INJECTION_PATTERNS = [
     # XML/HTML injection: <script>, event handlers, iframes
     (re.compile(r"<\s*script[\s>]|on\w+\s*=|<\s*iframe[\s>]"), "[sanitized]"),
     # Known system prefixes
-    (re.compile(r"(?i)\[IMPORTANT:.*?\]|\[SYSTEM:.*?\]|\[OVERRIDE:.*?\]"), ""),
+    (re.compile(r"(?i)\[IMPORTANT:.*?\]|\[SYSTEM:.*?\]|\[OVERRIDE:.*?\]"), "[REDACTED]"),
     # Control characters (keep newlines and tabs)
     (re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]"), ""),
     # Zero-width and invisible Unicode
