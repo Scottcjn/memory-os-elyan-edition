@@ -1,10 +1,11 @@
 """
 Embedding client. Provider-agnostic — defaults to OpenRouter, configurable
 via EMBEDDING_API_BASE and EMBEDDING_MODEL for local Ollama/vLLM/llama.cpp.
-Mandatory dimension validation.
+Mandatory dimension validation with in-memory LRU cache.
 """
 import os
 import logging
+from collections import OrderedDict
 
 import httpx
 
@@ -20,12 +21,21 @@ EMBEDDING_MODEL = os.environ.get(
     "EMBEDDING_MODEL", "qwen/qwen3-embedding-8b"
 )
 
+# In-memory LRU cache — avoids recomputing embeddings for repeated text
+_EMBEDDING_CACHE_MAXSIZE = 256
+_embedding_cache: OrderedDict = OrderedDict()
+
 
 async def get_embedding(text: str) -> list[float]:
     """
     Generates embedding via the configured backend.
     Validates that the returned dimensions match EMBEDDING_DIMS.
+    Results are cached in-memory (LRU, max 256 entries).
     """
+    # Check cache
+    if text in _embedding_cache:
+        _embedding_cache.move_to_end(text)
+        return _embedding_cache[text]
     headers = {"Content-Type": "application/json"}
 
     if "openrouter" in EMBEDDING_API_BASE.lower():
@@ -64,4 +74,10 @@ async def get_embedding(text: str) -> list[float]:
         )
 
     logger.debug(f"Embedding generated: {len(vec)} dims")
+    
+    # Store in LRU cache
+    _embedding_cache[text] = vec
+    if len(_embedding_cache) > _EMBEDDING_CACHE_MAXSIZE:
+        _embedding_cache.popitem(last=False)
+    
     return vec

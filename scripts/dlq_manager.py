@@ -82,6 +82,19 @@ def compute_error_hash(file: str, error: str) -> str:
     import hashlib
     return hashlib.md5(f"{file}:{error[:80]}".encode()).hexdigest()[:8]
 
+# ─── Retry ──────────────────────────────────────────────────────────────────
+
+def retry_transient(entries: List[DLQEntry]) -> int:
+    """Re-enable transient failures for retry. Returns count of re-enabled entries."""
+    count = 0
+    for e in entries:
+        if e.failure_class == "transient" and e.reported:
+            e.reported = False
+            e.retry_count += 1
+            e.last_retry = datetime.now().isoformat()
+            count += 1
+    return count
+
 # ─── Reporting ─────────────────────────────────────────────────────────────
 
 def build_report(entries: List[DLQEntry]) -> Dict:
@@ -135,11 +148,23 @@ def save_report(report: Dict):
     os.makedirs(REPORT_DIR, exist_ok=True)
     timestamp = datetime.now().isoformat()
     
-    # JSONL
+    # JSONL — append then truncate to MAX_REPORT_HISTORY
     with open(REPORT_LOG, "a") as f:
         f.write(json.dumps({"timestamp": timestamp, **report}, ensure_ascii=False) + "\n")
         f.flush()
         os.fsync(f.fileno())
+    
+    # Rotate: keep only the last MAX_REPORT_HISTORY entries
+    try:
+        with open(REPORT_LOG, "r") as f:
+            lines = f.readlines()
+        if len(lines) > MAX_REPORT_HISTORY:
+            with open(REPORT_LOG, "w") as f:
+                f.writelines(lines[-MAX_REPORT_HISTORY:])
+                f.flush()
+                os.fsync(f.fileno())
+    except OSError:
+        pass  # best-effort rotation
 
 def mark_reported(entries: List[DLQEntry]):
     for e in entries:
@@ -149,7 +174,16 @@ def get_status_summary(entries: List[DLQEntry]) -> Dict:
     total = len(entries)
     unreported = len([e for e in entries if not e.reported])
     by_class = Counter(e.failure_class for e in entries)
-    recent = [e for e in entries if datetime.now() - datetime.fromisoformat(e.timestamp.replace("Z", "+00:00")) < timedelta(hours=24)]
+    # Parse timestamps with fallback for malformed values
+    now = datetime.now()
+    recent = []
+    for e in entries:
+        try:
+            ts = datetime.fromisoformat(e.timestamp.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            continue  # skip entries with unparseable timestamps
+        if now - ts < timedelta(hours=24):
+            recent.append(e)
     
     return {
         "total": total,
@@ -168,9 +202,20 @@ def main():
     p.add_argument("--status", action="store_true", help="Status resumido")
     p.add_argument("--json", action="store_true", help="Saída JSON")
     p.add_argument("--silent-if-ok", action="store_true", help="Silencioso se DLQ ok")
+    p.add_argument("--retry", action="store_true", help="Re-enable transient failures for retry")
     args = p.parse_args()
     
     entries = load_dlq()
+    
+    if args.retry:
+        # Classify first so transient detection works
+        for e in entries:
+            if e.failure_class == "unknown":
+                e.failure_class = classify_error(e.error)
+        count = retry_transient(entries)
+        save_dlq(entries)
+        print(f"✅ {count} falha(s) transiente(s) re-habilitadas para retry")
+        return
     
     if args.status:
         summary = get_status_summary(entries)

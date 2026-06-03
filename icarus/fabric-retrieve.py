@@ -9,6 +9,8 @@ Usage:
     python3 fabric-retrieve.py "auth module" --agent icarus --project myapp
 """
 
+import hashlib
+
 import argparse
 import os
 import re
@@ -262,7 +264,8 @@ def deduplicate(entries):
     seen = {}
     result = []
     for e in entries:
-        key = (e.get("agent", ""), e.get("type", ""), e.get("_body", "")[:50])
+        body = e.get("_body", "") or ""
+        key = hashlib.sha256(body.encode()).hexdigest()
         existing = seen.get(key)
         if existing:
             # Keep the newer one
