@@ -202,10 +202,11 @@ def _search_qdrant(query, top_k=2, threshold=0.72):
     content_preview, source, tags.
     Returns empty list on any failure (fail-open).
     """
+    old_api_key = os.environ.get("OPENROUTER_API_KEY")
     try:
-        # context_enhancer looks for OPENROUTER_API_KEY (singular);
-        # inject our resolved key into environ for compatibility
-        if _OPENROUTER_KEY and not os.environ.get("OPENROUTER_API_KEY"):
+        # context_enhancer reads OPENROUTER_API_KEY at module level;
+        # set it temporarily, then restore in finally.
+        if _OPENROUTER_KEY and not old_api_key:
             os.environ["OPENROUTER_API_KEY"] = _OPENROUTER_KEY
 
         from scripts.context_enhancer import (
@@ -223,6 +224,12 @@ def _search_qdrant(query, top_k=2, threshold=0.72):
         return results
     except Exception:
         return []
+    finally:
+        # Restore original env state — never leave a mutation behind.
+        if old_api_key is None:
+            os.environ.pop("OPENROUTER_API_KEY", None)
+        else:
+            os.environ["OPENROUTER_API_KEY"] = old_api_key
 
 
 # ── Session history search (FTS5 over state.db) ──────────────

@@ -366,7 +366,10 @@ def write_entry(entry_type, content, summary, tier="hot", tags="", platform="cli
     lines.extend(["---", "", content])
 
     path = FABRIC_DIR / filename
-    path.write_text("\n".join(lines), "utf-8")
+    content_str = "\n".join(lines)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(content_str, "utf-8")
+    tmp.rename(path)
     logger.info("icarus: wrote %s", filename)
 
     # opt-in obsidian formatting
@@ -488,7 +491,7 @@ def read_pending(customer_id=None):
     if not FABRIC_DIR.exists():
         return [], [], []
 
-    agent = AGENT_NAME
+    agent = AGENT_NAME or "agent"
     open_tasks = []
     reviews = []
     open_tickets = []
@@ -1201,4 +1204,7 @@ def write_memory_file(s):
         lines.append("")
     lines.append(f"cycles: {s.get('cycle', 0)}")
 
-    mem_path.write_text("\n".join(lines), "utf-8")
+    content_str = "\n".join(lines)
+    tmp_path = mem_path.with_suffix(".tmp")
+    tmp_path.write_text(content_str, "utf-8")
+    tmp_path.rename(mem_path)
