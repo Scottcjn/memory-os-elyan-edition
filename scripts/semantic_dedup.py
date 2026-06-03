@@ -1,24 +1,18 @@
 #!/usr/bin/env python3
 """
 semantic_dedup.py
-Monthly scanner for near-duplicates in knowledge_base_hybrid via cosine similarity.
-Runs on the first Sunday of each month (cron: 0 3 1 * *).
+Scanner mensal de near-duplicates no knowledge_base_hybrid via cosine similarity.
+Rodo no primeiro domingo de cada mês (cron: 0 3 1 * *).
 
-⚠️  WARNING: This performs O(n²) brute-force pairwise comparisons. For large
-    collections (e.g. 100K+ points), this can be extremely slow and memory-heavy.
-    Use --max-points to limit processing, or prefer Qdrant's built-in
-    nearest-neighbor search on a random sample where feasible.
+Regras:
+- Ignora coleções com prefixo em DEDUP_EXEMPT_PREFIXES (csv)
+- Não deleta automaticamente — apenas emite relatório JSON de candidatos
+- Threshold de similaridade: 0.92 (configurável)
+- Merge é feito em upserts via file_ingestion.py (pre-write dedup)
+- Este script faz o scan retroativo da coleção inteira
 
-Rules:
-- Ignores gabi_* collections
-- Does not delete automatically — only emits a JSON report of candidates
-- Similarity threshold: 0.92 (configurable)
-- Merge is handled via upserts in file_ingestion.py (pre-write dedup)
-- This script does the retrospective scan of the entire collection
-  (capped by MAX_POINTS)
-
-Usage:
-  python3 semantic_dedup.py [--collection knowledge_base_hybrid] [--threshold 0.92] [--dry-run] [--max-points 5000]
+Uso:
+  python3 semantic_dedup.py [--collection knowledge_base_hybrid] [--threshold 0.92] [--dry-run]
 """
 
 import os
@@ -34,18 +28,13 @@ from typing import List, Dict, Tuple, Optional
 # ─── Config ────────────────────────────────────────────────────────────────
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
 COLLECTION = os.environ.get("QDRANT_COLLECTION", "knowledge_base")
-SCROLL_LIMIT = 50  # Qdrant pagination (avoids timeout on large collections)
+SCROLL_LIMIT = 50  # paginação Qdrant (evita timeout em coleções grandes)
 SIMILARITY_THRESHOLD = 0.92
 TOP_NEIGHBORS = 10
 
-LOG_DIR = Path(
-    os.environ.get("HERMES_LOG_DIR", str(Path.home() / ".hermes" / "logs"))
-)
+LOG_DIR = Path.home() / ".hermes" / "logs"
 LOG_FILE = LOG_DIR / "semantic_dedup.log"
 REPORT_FILE = LOG_DIR / "semantic_dedup_report.json"
-
-# Safety cap — limit processed points to avoid O(n²) blowup on large collections
-MAX_POINTS = int(os.environ.get("DEDUP_MAX_POINTS", "5000"))
 
 
 def now_iso() -> str:
@@ -68,8 +57,8 @@ def log_message(msg: str):
 
 def scroll_all_chunks(collection: str) -> List[Dict]:
     """
-    Load all points from the collection, paginating via scroll.
-    Returns a list of {id, vector, payload}.
+    Carrega todos os pontos da coleção paginando via scroll.
+    Retorna lista de {id, vector, payload}.
     """
     all_chunks = []
     offset = None
@@ -100,13 +89,13 @@ def scroll_all_chunks(collection: str) -> List[Dict]:
                 break
 
             for point in points:
-                # Get only the dense vector for similarity
+                # Pegar apenas vetor dense para similarity
                 vector = point.get("vector")
                 dense = None
                 if isinstance(vector, dict):
                     dense = vector.get("dense")
                 elif isinstance(vector, list):
-                    dense = vector  # fallback: simple vector
+                    dense = vector  # fallback: vetor simples
 
                 if dense:
                     all_chunks.append({
@@ -121,15 +110,15 @@ def scroll_all_chunks(collection: str) -> List[Dict]:
                 break
 
         except Exception as e:
-            log_message(f"❌ Error in Qdrant scroll: {e}")
+            log_message(f"❌ Erro no scroll Qdrant: {e}")
             break
 
-    log_message(f"📊 Total chunks loaded: {len(all_chunks)} / {scanned} scanned")
+    log_message(f"📊 Total chunks carregados: {len(all_chunks)} / {scanned} escaneados")
     return all_chunks
 
 
 def cosine_similarity(v1: List[float], v2: List[float]) -> float:
-    """Calculate cosine similarity between two vectors."""
+    """Calcula cosine similarity entre dois vetores."""
     if len(v1) != len(v2):
         return 0.0
 
@@ -145,25 +134,25 @@ def cosine_similarity(v1: List[float], v2: List[float]) -> float:
 
 def find_near_duplicates(chunks: List[Dict], threshold: float = SIMILARITY_THRESHOLD) -> List[Dict]:
     """
-    Find near-duplicate pairs via brute-force cosine similarity.
-    Optimization: upper-triangular matrix comparison.
-    Returns list of {chunk_id_a, chunk_id_b, similarity}.
+    Encontra pares de near-duplicates via brute-force cosine similarity.
+    Otimização: comparação triangular superior da matriz.
+    Retorna lista de {chunk_id_a, chunk_id_b, similarity}.
     """
     n = len(chunks)
     if n < 2:
         return []
 
     candidates = []
-    ids_seen = set()  # avoid duplicates (A,B) and (B,A)
+    ids_seen = set()  # evita duplicados (A,B) e (B,A)
 
     for i in range(n):
         for j in range(i + 1, n):
-            # Fast heuristic: skip if texts differ greatly in size
+            # Heurística rápida: pular se textos são muito diferentes em tamanho
             text_len_i = len(chunks[i]["payload"].get("text", ""))
             text_len_j = len(chunks[j]["payload"].get("text", ""))
             if text_len_i > 0 and text_len_j > 0:
                 ratio = min(text_len_i, text_len_j) / max(text_len_i, text_len_j)
-                if ratio < 0.5:  # Very different sizes, skip
+                if ratio < 0.5:  # Tamanhos muito diferentes, skip
                     continue
 
             sim = cosine_similarity(chunks[i]["vector"], chunks[j]["vector"])
@@ -183,13 +172,13 @@ def find_near_duplicates(chunks: List[Dict], threshold: float = SIMILARITY_THRES
                         "text_preview_b": chunks[j]["payload"].get("text", "")[:100],
                     })
 
-    # Sort by descending similarity
+    # Ordenar por similaridade decrescente
     candidates.sort(key=lambda x: x["similarity"], reverse=True)
     return candidates
 
 
 def generate_report(candidates: List[Dict], collection: str, threshold: float, scanned: int) -> Dict:
-    """Generate structured JSON report."""
+    """Gera relatório estruturado em JSON."""
     return {
         "timestamp": now_iso(),
         "collection": collection,
@@ -198,74 +187,73 @@ def generate_report(candidates: List[Dict], collection: str, threshold: float, s
         "near_duplicate_pairs": len(candidates),
         "candidates": candidates,
         "recommendation": (
-            f"{len(candidates)} near-duplicate pairs found. "
-            "Review manually and apply merge via Qdrant point update if approved."
+            f"{len(candidates)} pares de near-duplicates encontrados. "
+            "Revisar manualmente e aplicar merge via Qdrant point update se aprovado."
         ),
     }
 
 
 def main():
     parser = argparse.ArgumentParser(description="Semantic Dedup Scanner")
-    parser.add_argument("--collection", default=COLLECTION, help="Qdrant collection name")
-    parser.add_argument("--threshold", type=float, default=SIMILARITY_THRESHOLD, help="Cosine similarity threshold")
-    parser.add_argument("--max-points", type=int, default=MAX_POINTS, help="Max points to process (cap O(n²))")
-    parser.add_argument("--dry-run", action="store_true", help="Scan only, do not save report")
+    parser.add_argument("--collection", default=COLLECTION, help="Nome da coleção Qdrant")
+    parser.add_argument("--threshold", type=float, default=SIMILARITY_THRESHOLD, help="Threshold cosine similarity")
+    parser.add_argument("--dry-run", action="store_true", help="Só escaneia, não salva relatório")
     args = parser.parse_args()
 
     collection = args.collection
 
-    # Skip gabi_* collections
-    if collection.startswith("gabi_"):
-        log_message(f"⏭️ Collection '{collection}' is exempt (gabi_*). Exiting.")
-        return
+    # Ignorar coleções com prefixos exempt (via DEDUP_EXEMPT_PREFIXES env var)
+    exempt_prefixes = os.environ.get("DEDUP_EXEMPT_PREFIXES", "").split(",")
+    exempt_prefixes = [p.strip() for p in exempt_prefixes if p.strip()]
+    for prefix in exempt_prefixes:
+        if collection.startswith(prefix):
+            log_message(f"⏭️ Coleção '{collection}' é exempt (prefixo '{prefix}'). Saindo.")
+            return
 
-    log_message(f"🚀 Starting semantic dedup (collection={collection}, threshold={args.threshold}, dry_run={args.dry_run})")
+    log_message(f"🚀 Iniciando semantic dedup (collection={collection}, threshold={args.threshold}, dry_run={args.dry_run})")
 
-    # Load chunks (capped by --max-points to avoid O(n²) blowup)
+    # Carregar chunks
     chunks = scroll_all_chunks(collection)
-    if args.max_points and len(chunks) > args.max_points:
-        log_message(f"⚠️  Collection has {len(chunks)} points, truncating to {args.max_points} (use --max-points to change)")
-        chunks = chunks[:args.max_points]
 
     if not chunks:
-        log_message("⚠️ No chunks found in the collection.")
+        log_message("⚠️ Nenhum chunk encontrado na coleção.")
         return
 
-    # Find near-duplicates
-    log_message(f"🔍 Analyzing similarity among {len(chunks)} chunks...")
+    # Encontrar near-duplicates
+    log_message(f"🔍 Analisando similaridade entre {len(chunks)} chunks...")
     candidates = find_near_duplicates(chunks, threshold=args.threshold)
 
-    # Generate report
+    # Gerar relatório
     report = generate_report(candidates, collection, args.threshold, len(chunks))
 
     log_message("=" * 60)
-    log_message("📊 SEMANTIC DEDUP REPORT")
+    log_message("📊 RELATÓRIO SEMANTIC DEDUP")
     log_message("=" * 60)
-    log_message(f"  Chunks scanned:          {report['scanned_chunks']}")
-    log_message(f"  Near-duplicate pairs:    {report['near_duplicate_pairs']}")
+    log_message(f"  Chunks escaneados:      {report['scanned_chunks']}")
+    log_message(f"  Near-duplicate pairs:   {report['near_duplicate_pairs']}")
 
     if candidates:
-        log_message(f"  Top similarity:          {candidates[0]['similarity']:.4f}")
-        log_message(f"  Top pair:                {candidates[0]['chunk_id_a']} ↔ {candidates[0]['chunk_id_b']}")
+        log_message(f"  Top similaridade:       {candidates[0]['similarity']:.4f}")
+        log_message(f"  Top par:                {candidates[0]['chunk_id_a']} ↔ {candidates[0]['chunk_id_b']}")
     else:
-        log_message("  No near-duplicates found.")
+        log_message("  Nenhum near-duplicate encontrado.")
 
     log_message("=" * 60)
 
-    # Save JSON report
+    # Salvar relatório JSON
     if not args.dry_run and candidates:
         try:
             REPORT_FILE.parent.mkdir(parents=True, exist_ok=True)
             with open(REPORT_FILE, "w", encoding="utf-8") as f:
                 json.dump(report, f, ensure_ascii=False, indent=2)
-            log_message(f"📄 Report saved: {REPORT_FILE}")
+            log_message(f"📄 Relatório salvo: {REPORT_FILE}")
         except Exception as e:
-            log_message(f"❌ Error saving report: {e}")
+            log_message(f"❌ Erro ao salvar relatório: {e}")
 
-    # Output JSON to stderr (parseable)
+    # Output JSON para stderr (parseável)
     print(json.dumps(report, ensure_ascii=False, indent=2), file=sys.stderr)
 
-    log_message("✅ Semantic dedup complete.")
+    log_message("✅ Semantic dedup completo.")
 
 
 if __name__ == "__main__":

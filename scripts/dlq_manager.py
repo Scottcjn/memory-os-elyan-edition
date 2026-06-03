@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-DLQ Manager — Reads, classifies, reports, and marks wiki ingest failures.
+DLQ Manager — Lê, classifica, reporta e marca falhas do wiki ingest.
 
-Usage:
-  python3 dlq_manager.py --report        # report unreported failures
-  python3 dlq_manager.py --status        # DLQ status summary
-  python3 dlq_manager.py --json          # full JSON output
+Uso:
+  python3 dlq_manager.py --report        # reporta falhas não reportadas
+  python3 dlq_manager.py --status        # status resumido da DLQ
+  python3 dlq_manager.py --json            # saída JSON completa
 """
 
 import os
@@ -18,10 +18,10 @@ from dataclasses import dataclass, asdict, field
 from collections import Counter
 
 # ─── Config ────────────────────────────────────────────────────────────────
-DLQ_PATH = os.environ.get("HERMES_DLQ_PATH", os.path.expanduser("~/.hermes/wiki_ingest_failures.json"))
-REPORT_LOG = os.environ.get("HERMES_DLQ_REPORT_LOG", os.path.expanduser("~/.hermes/cron/output/dlq_reports.jsonl"))
-REPORT_DIR = os.environ.get("HERMES_DLQ_REPORT_DIR", os.path.expanduser("~/.hermes/cron/output/quality_report"))
-MAX_REPORT_HISTORY = 100  # entries in JSONL
+DLQ_PATH = os.path.expanduser("~/.hermes/wiki_ingest_failures.json")
+REPORT_LOG = os.path.expanduser("~/.hermes/cron/output/dlq_reports.jsonl")
+REPORT_DIR = os.path.expanduser("~/.hermes/cron/output/quality_report")
+MAX_REPORT_HISTORY = 100  # entradas no JSONL
 
 # ─── Data Model ─────────────────────────────────────────────────────────────
 
@@ -34,7 +34,7 @@ class DLQEntry:
     reported: bool = False
     retry_count: int = 0
     last_retry: Optional[str] = None
-    error_hash: str = ""  # error hash for deduplication
+    error_hash: str = ""  # hash do erro para deduplicação
 
 # ─── File I/O ─────────────────────────────────────────────────────────────
 
@@ -50,7 +50,7 @@ def load_dlq() -> List[DLQEntry]:
             return [DLQEntry(**item) for item in data["failures"]]
         return []
     except Exception as e:
-        print(f"[DLQ-ERROR] Failed to load: {e}", file=sys.stderr)
+        print(f"[DLQ-ERROR] Falha ao carregar: {e}", file=sys.stderr)
         return []
 
 def save_dlq(entries: List[DLQEntry]):
@@ -78,7 +78,7 @@ def classify_error(error_msg: str) -> str:
     return "unknown"
 
 def compute_error_hash(file: str, error: str) -> str:
-    """Generate a simple hash for deduplication of similar errors."""
+    """Gera um hash simples para deduplicação de erros similares."""
     import hashlib
     return hashlib.md5(f"{file}:{error[:80]}".encode()).hexdigest()[:8]
 
@@ -91,7 +91,7 @@ def build_report(entries: List[DLQEntry]) -> Dict:
     if not unreported:
         return {"status": "ok", "unreported_count": 0, "total": total, "report": ""}
     
-    # Classify
+    # Classifica
     for e in unreported:
         if e.failure_class == "unknown":
             e.failure_class = classify_error(e.error)
@@ -101,22 +101,22 @@ def build_report(entries: List[DLQEntry]) -> Dict:
     by_file = Counter(os.path.basename(e.file) for e in unreported)
     
     lines = [
-        f"🚨 [DLQ-ALERT] {len(unreported)} new failure(s) in ingest",
-        f"   Total accumulated in DLQ: {total}",
+        f"🚨 [DLQ-ALERT] {len(unreported)} nova(s) falha(s) no ingest",
+        f"   Total acumulado na DLQ: {total}",
         "",
-        "By class:",
+        "Por classe:",
     ]
     emoji = {"transient": "⏳", "permanent": "💀", "unknown": "❓"}
     for cls, count in by_class.most_common():
         lines.append(f"  {emoji.get(cls, '❓')} {cls}: {count}")
     
     lines.append("")
-    lines.append("Top errors:")
+    lines.append("Top erros:")
     for err, count in by_error_short.most_common(5):
         lines.append(f"  • ({count}x) {err}")
     
     lines.append("")
-    lines.append("Files:")
+    lines.append("Arquivos:")
     for fname, count in by_file.most_common(10):
         lines.append(f"  • {fname} ({count}x)")
     
@@ -133,7 +133,6 @@ def build_report(entries: List[DLQEntry]) -> Dict:
 
 def save_report(report: Dict):
     os.makedirs(REPORT_DIR, exist_ok=True)
-    os.makedirs(os.path.dirname(REPORT_LOG), exist_ok=True)
     timestamp = datetime.now().isoformat()
     
     # JSONL
@@ -150,7 +149,7 @@ def get_status_summary(entries: List[DLQEntry]) -> Dict:
     total = len(entries)
     unreported = len([e for e in entries if not e.reported])
     by_class = Counter(e.failure_class for e in entries)
-    recent = [e for e in entries if datetime.now(datetime.timezone.utc) - datetime.fromisoformat(e.timestamp.replace("Z", "+00:00")).astimezone(datetime.timezone.utc) < timedelta(hours=24)]
+    recent = [e for e in entries if datetime.now() - datetime.fromisoformat(e.timestamp.replace("Z", "+00:00")) < timedelta(hours=24)]
     
     return {
         "total": total,
@@ -164,11 +163,11 @@ def get_status_summary(entries: List[DLQEntry]) -> Dict:
 
 def main():
     import argparse
-    p = argparse.ArgumentParser(description="DLQ Manager — Auto-report of failures")
-    p.add_argument("--report", action="store_true", help="Generate report of unreported failures")
-    p.add_argument("--status", action="store_true", help="Status summary")
-    p.add_argument("--json", action="store_true", help="JSON output")
-    p.add_argument("--silent-if-ok", action="store_true", help="Silent if DLQ is ok")
+    p = argparse.ArgumentParser(description="DLQ Manager — Auto-report de falhas")
+    p.add_argument("--report", action="store_true", help="Gerar relatório das não-reportadas")
+    p.add_argument("--status", action="store_true", help="Status resumido")
+    p.add_argument("--json", action="store_true", help="Saída JSON")
+    p.add_argument("--silent-if-ok", action="store_true", help="Silencioso se DLQ ok")
     args = p.parse_args()
     
     entries = load_dlq()
@@ -178,7 +177,7 @@ def main():
         if args.json:
             print(json.dumps(summary, indent=2, ensure_ascii=False))
         else:
-            print(f"DLQ status: {summary['total']} total, {summary['unreported']} unreported")
+            print(f"DLQ status: {summary['total']} total, {summary['unreported']} não-reportadas")
             for cls, count in summary.get("by_class", {}).items():
                 print(f"  {cls}: {count}")
         return
@@ -186,25 +185,25 @@ def main():
     report = build_report(entries)
     
     if report["status"] == "ok":
-        msg = "[DLQ-OK] No new failures since last check."
+        msg = "[DLQ-OK] Nenhuma falha nova desde último check."
         if not args.silent_if_ok:
             print(msg)
         if args.json:
             print(json.dumps(report, indent=2, ensure_ascii=False))
         return
     
-    # Has new failures
+    # Tem novas falhas
     if args.json:
         print(json.dumps(report, indent=2, ensure_ascii=False))
     else:
         print(report["report"])
     
-    # Save and mark as reported
+    # Salva e marca como reportadas
     save_report(report)
     mark_reported(entries)
     save_dlq(entries)
     
-    # Exit code 1 for cron trigger
+    # Exit code 1 para cron trigger
     sys.exit(1)
 
 if __name__ == "__main__":

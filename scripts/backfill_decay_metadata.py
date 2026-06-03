@@ -45,12 +45,12 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError
 
 # ─── Config ──────────────────────────────────────────────────────────────────
-QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
-COLLECTION = os.environ.get("QDRANT_COLLECTION", os.environ.get("COLLECTION_NAME", "knowledge_base"))
+QDRANT_URL = "http://localhost:6333"
+COLLECTION = "knowledge_base"
 BATCH_SIZE = 200
 SCROLL_LIMIT = 200
-LOG_FILE = Path(os.environ.get("HERMES_LOGS_DIR", str(Path.home() / ".hermes" / "logs"))) / "decay_scanner.log"
-VAULT_ROOT = Path(os.environ.get("VAULT_PATH", "."))
+LOG_FILE = Path.home() / ".hermes/logs/decay_scanner.log"
+VAULT_ROOT = Path.home() / "Vault"
 
 # ─── Heuristics ──────────────────────────────────────────────────────────────
 CONFIDENCE_BY_SOURCE = {

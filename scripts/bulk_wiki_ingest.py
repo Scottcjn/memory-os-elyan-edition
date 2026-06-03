@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Bulk ingest script — populates the Qdrant knowledge_base with all wiki content.
-Phase A: one-shot of existing files.
+Bulk ingest script — popula a knowledge_base Qdrant com todo conteúdo da wiki.
+Fase A: one-shot dos arquivos existentes.
 """
 import os
 import re
@@ -18,9 +18,9 @@ import asyncio
 
 # ─── Config ────────────────────────────────────────────────────────────────
 OPENROUTER_KEY = os.environ.get("OPENROUTER_API_KEY")
-QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
-COLLECTION = os.environ.get("QDRANT_COLLECTION", os.environ.get("COLLECTION_NAME", "knowledge_base"))
-WIKI_ROOT = Path(os.environ.get("WIKI_ROOT", "."))
+QDRANT_URL = "http://localhost:6333"
+COLLECTION = "knowledge_base"
+WIKI_ROOT = Path.home() / "Vault" / "wiki"
 EMBEDDING_MODEL = "qwen/qwen3-embedding-8b"
 EMBEDDING_DIMS = 4096
 MAX_TEXT_LEN = 8000      # truncate text for embedding (model context limit)
@@ -28,20 +28,20 @@ BATCH_SIZE = 8           # parallel embedding requests
 RATE_LIMIT_SLEEP = 0.5   # seconds between batches
 
 if not OPENROUTER_KEY:
-    print("❌ OPENROUTER_API_KEY not found in environment")
+    print("❌ OPENROUTER_API_KEY não encontrada no ambiente")
     sys.exit(1)
 
 print(f"📁 Wiki root: {WIKI_ROOT}")
-print(f"🎯 Collection: {COLLECTION}")
-print(f"🔑 OpenRouter: configured")
+print(f"🎯 Coleção: {COLLECTION}")
+print(f"🔑 OpenRouter: {OPENROUTER_KEY[:20]}...")
 
-# ─── Find all .md files ───────────────────────────────────────────────────
+# ─── Encontrar todos os .md ────────────────────────────────────────────────
 md_files = sorted(WIKI_ROOT.rglob("*.md"))
-print(f"📄 .md files found: {len(md_files)}")
+print(f"📄 Arquivos .md encontrados: {len(md_files)}")
 
 # ─── Helpers ──────────────────────────────────────────────────────────────
 def parse_frontmatter(text: str) -> tuple[dict, str]:
-    """Extract YAML frontmatter and return (metadata, body)."""
+    """Extrai YAML frontmatter e retorna (metadata, body)."""
     if text.startswith("---"):
         parts = text.split("---", 2)
         if len(parts) >= 3:
@@ -55,7 +55,7 @@ def parse_frontmatter(text: str) -> tuple[dict, str]:
     return {}, text
 
 def get_source_tag(path: Path) -> str:
-    """Derive source tag from path relative to wiki root."""
+    """Deriva source tag do path relativo à wiki."""
     rel = path.relative_to(WIKI_ROOT)
     parts = rel.parts
     if len(parts) > 1:
@@ -63,14 +63,14 @@ def get_source_tag(path: Path) -> str:
     return "wiki-root"
 
 def get_tags_from_frontmatter(meta: dict) -> list[str]:
-    """Extract tags from frontmatter."""
+    """Extrai tags do frontmatter."""
     tags = meta.get("tags", [])
     if isinstance(tags, str):
         tags = [t.strip() for t in tags.split(",")]
     return tags if isinstance(tags, list) else []
 
 async def get_embedding(session: aiohttp.ClientSession, text: str) -> list[float] | None:
-    """Generate embedding via OpenRouter."""
+    """Gera embedding via OpenRouter."""
     payload = {
         "model": EMBEDDING_MODEL,
         "input": text[:MAX_TEXT_LEN],
@@ -97,7 +97,7 @@ async def get_embedding(session: aiohttp.ClientSession, text: str) -> list[float
         return None
 
 async def upsert_to_qdrant(session: aiohttp.ClientSession, points: list[dict]) -> bool:
-    """Upsert batch of points into Qdrant."""
+    """Upsert batch de pontos no Qdrant."""
     try:
         async with session.put(
             f"{QDRANT_URL}/collections/{COLLECTION}/points",
@@ -114,7 +114,7 @@ async def upsert_to_qdrant(session: aiohttp.ClientSession, points: list[dict]) -
         print(f"⚠️ Qdrant error: {e}")
         return False
 
-# ─── Main processing ──────────────────────────────────────────────────────
+# ─── Processamento principal ──────────────────────────────────────────────
 async def main():
     stats = Counter({"ok": 0, "fail": 0, "skip": 0, "empty": 0})
     errors = []
@@ -123,13 +123,13 @@ async def main():
 
     connector = aiohttp.TCPConnector(limit=20)
     async with aiohttp.ClientSession(connector=connector) as session:
-        # Check collection
+        # Verificar coleção
         async with session.get(f"{QDRANT_URL}/collections/{COLLECTION}") as r:
             if r.status != 200:
-                print(f"❌ Collection {COLLECTION} does not exist!")
+                print(f"❌ Coleção {COLLECTION} não existe!")
                 sys.exit(1)
 
-        print("\n🚀 Starting ingestion in batches...\n")
+        print("\n🚀 Iniciando ingestão em batches...\n")
 
         batch = []
         for idx, path in enumerate(md_files, 1):
@@ -141,15 +141,15 @@ async def main():
             meta, body = parse_frontmatter(text)
             source = get_source_tag(path)
             tags = get_tags_from_frontmatter(meta)
-            # Additional tag from folder
+            # Tag adicional da pasta
             folder_tag = source.replace("wiki-", "")
             if folder_tag not in tags:
                 tags.append(folder_tag)
 
-            # Title from frontmatter or filename
+            # Título do frontmatter ou filename
             title = meta.get("title", path.stem)
 
-            # Text for embedding: title + body (without frontmatter)
+            # Texto para embedding: título + body (sem frontmatter)
             embed_text = f"{title}\n\n{body}"[:MAX_TEXT_LEN]
 
             batch.append({
@@ -163,11 +163,11 @@ async def main():
             })
 
             if len(batch) >= BATCH_SIZE or idx == total:
-                # Generate embeddings in parallel
+                # Gerar embeddings em paralelo
                 embed_tasks = [get_embedding(session, b["embed_text"]) for b in batch]
                 vectors = await asyncio.gather(*embed_tasks)
 
-                # Prepare Qdrant points
+                # Preparar pontos Qdrant
                 points = []
                 for b, vec in zip(batch, vectors):
                     if vec is None:
@@ -175,7 +175,7 @@ async def main():
                         errors.append(f"Embedding failed: {b['path']}")
                         continue
 
-                    # Heuristic importance_score based on path/name
+                    # Heurística de importance_score baseada no path/nome
                     importance_score = 0.5
                     path_str_lower = b["path"].lower()
                     if any(k in path_str_lower for k in ["architecture", "core", "important"]):
@@ -200,12 +200,12 @@ async def main():
                             "file_path": b["path"],
                             "title": b["title"],
                             "word_count": len(b["embed_text"].split()),
-                            # ── Lineage fields (Phase 1)
+                            # ── Lineage fields (Fase 1)
                             "lineage_id": None,
                             "generation_model": None,
                             "generation_context_hash": None,
                             "retrieved_chunk_ids": None,
-                            # ── Decay fields (Phase 2)
+                            # ── Decay fields (Fase 2)
                             "decay_score": 1.0,
                             "last_accessed_at": now_iso,
                             "importance_score": importance_score,
@@ -229,37 +229,37 @@ async def main():
                 processed += len(batch)
                 batch = []
 
-                # Progress
+                # Progresso
                 pct = (processed / total) * 100
                 print(f"  [{processed}/{total}] {pct:.1f}% | ✅ {stats['ok']} | ⚠️ {stats['fail']} | ⏭️ {stats['skip']} | 🈳 {stats['empty']}")
 
                 # Rate limit breathing
                 await asyncio.sleep(RATE_LIMIT_SLEEP)
 
-    # ─── Final report ───────────────────────────────────────────────────
+    # ─── Relatório final ───────────────────────────────────────────────────
     print("\n" + "=" * 60)
-    print("📊 INGESTION REPORT")
+    print("📊 RELATÓRIO DE INGESTÃO")
     print("=" * 60)
-    print(f"  Total files:        {total}")
-    print(f"  Ingested (ok):      {stats['ok']}")
-    print(f"  Failures:           {stats['fail']}")
-    print(f"  Empty:              {stats['empty']}")
-    print(f"  Success rate:       {(stats['ok']/max(total-stats['empty'],1)*100):.1f}%")
-    print(f"\n  ⏱️  Finished: {datetime.now(timezone.utc).isoformat()}")
+    print(f"  Total arquivos:     {total}")
+    print(f"  Ingestados (ok):    {stats['ok']}")
+    print(f"  Falhas:             {stats['fail']}")
+    print(f"  Vazios:             {stats['empty']}")
+    print(f"  Taxa de sucesso:    {(stats['ok']/max(total-stats['empty'],1)*100):.1f}%")
+    print(f"\n  ⏱️  Finalizado: {datetime.now(timezone.utc).isoformat()}")
 
     if errors:
-        print(f"\n  ⚠️  First errors ({min(10, len(errors))} of {len(errors)}):")
+        print(f"\n  ⚠️  Primeiros erros ({min(10, len(errors))} de {len(errors)}):")
         for e in errors[:10]:
             print(f"     - {e}")
 
-    # Verify final count
+    # Verificar count final
     async with aiohttp.ClientSession() as s:
         async with s.get(f"{QDRANT_URL}/collections/{COLLECTION}") as r:
             data = await r.json()
             final_count = data.get("result", {}).get("points_count", "?")
-            print(f"\n  📦 Points in collection: {final_count}")
+            print(f"\n  📦 Pontos na coleção: {final_count}")
 
-    print("\n✅ Bulk ingest complete.")
+    print("\n✅ Bulk ingest completo.")
     return stats
 
 if __name__ == "__main__":

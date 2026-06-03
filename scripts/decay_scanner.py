@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
 decay_scanner.py
-Selective archiving script for low-importance AI-generated chunks.
-Runs via weekly cron (0 3 * * 0).
+Script de arquivamento seletivo de chunks IA-generated com baixa importância.
+Roda via cron semanal (0 3 * * 0).
 
-Rules:
-- source_type in ["human", "procedural"] → exempt (never archive)
+Regras:
+- source_type in ["human", "procedural"] → exempt (nunca arquiva)
 - importance_score >= 0.7 → exempt
-- archived == True → skip (already archived)
-- half_life: 90d if importance_score >= 0.3, else 30d
+- archived == True → skip (já arquivado)
+- half_life: 90d se importance_score >= 0.3, senão 30d
 - decay_score < 0.1:
-  - If confidence_score >= 0.7 → alert (report, don't archive)
-  - Otherwise → archive (archived = True)
-- gabi_* collections are completely ignored
+  - Se confidence_score >= 0.7 → alerta (reporta, não arquiva)
+  - Senão → archive (archived = True)
+- Coleções com prefixo em DECAY_EXEMPT_PREFIXES (csv) são ignoradas
 
-Usage:
+Uso:
   python3 decay_scanner.py [--collection knowledge_base_hybrid] [--dry-run]
 """
 
@@ -30,8 +30,8 @@ from pathlib import Path
 # ─── Config ────────────────────────────────────────────────────────────────
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
 COLLECTION = os.environ.get("QDRANT_COLLECTION", "knowledge_base")
-SCROLL_LIMIT = 100  # Qdrant pagination
-LOG_DIR = Path(os.environ.get("HERMES_LOGS_DIR", str(Path.home() / ".hermes" / "logs")))
+SCROLL_LIMIT = 100  # paginação Qdrant
+LOG_DIR = Path.home() / ".hermes" / "logs"
 LOG_FILE = LOG_DIR / "decay_scanner.log"
 
 # ─── Helpers ──────────────────────────────────────────────────────────────
@@ -42,35 +42,35 @@ def now_iso() -> str:
 
 def calculate_decay_score(last_accessed_at: str, importance_score: float) -> float:
     """
-    Calculate exponential decay: score = exp(-ln(2) * age_days / half_life).
-    More important chunks persist longer (larger half-lives).
+    Calcula decay exponencial: score = exp(-ln(2) * age_days / half_life).
+    Chunks mais importantes persistem mais (half-lives maiores).
     """
     try:
         last = datetime.fromisoformat(last_accessed_at.replace("Z", "+00:00"))
     except (ValueError, TypeError):
-        # If timestamp is invalid, assume now (hasn't decayed yet)
+        # Se timestamp inválido, assumir now (não decaiu ainda)
         return 1.0
     
     now = datetime.now(timezone.utc)
     age_days = max(0, (now - last).total_seconds() / 86400)
     
-    # Fix: LARGER half-life for more important chunks
+    # Correção: half-life MAIOR para chunks mais importantes
     if importance_score >= 0.3:
-        half_life = 90  # medium/high chunks → 90 days
+        half_life = 90  # chunks médio/alto → 90 dias
     else:
-        half_life = 30  # low chunks → 30 days
+        half_life = 30  # chunks baixo → 30 dias
     
     decay_score = math.exp(-math.log(2) * age_days / half_life)
     return decay_score
 
 
 def ensure_log_dir():
-    """Create log directory if it doesn't exist."""
+    """Cria diretório de logs se não existir."""
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def log_message(msg: str):
-    """Log to stdout and append to log file."""
+    """Loga para stdout e append no arquivo."""
     ts = now_iso()
     line = f"[{ts}] {msg}"
     print(line)
@@ -83,8 +83,8 @@ def log_message(msg: str):
 
 def scroll_chunks(collection: str, limit: int = SCROLL_LIMIT):
     """
-    Generator that iterates over all points in the collection via scroll.
-    Avoids loading the entire collection into memory.
+    Generator que itera sobre todos os pontos da coleção via scroll.
+    Evita carregar a coleção inteira em memória.
     """
     offset = None
     total_scanned = 0
@@ -122,16 +122,16 @@ def scroll_chunks(collection: str, limit: int = SCROLL_LIMIT):
                 break
                 
         except Exception as e:
-            log_message(f"❌ Qdrant scroll error: {e}")
+            log_message(f"❌ Erro no scroll Qdrant: {e}")
             break
     
-    log_message(f"📊 Total chunks scanned: {total_scanned}")
+    log_message(f"📊 Total de chunks escaneados: {total_scanned}")
 
 
 def update_point_archived(point_id: str, collection: str, decay_score: float, dry_run: bool = False):
-    """Update point payload: archived=True + calculated decay_score."""
+    """Atualiza payload do ponto: archived=True + decay_score calculado."""
     if dry_run:
-        log_message(f"  [DRY-RUN] Would archive point {point_id} (decay_score={decay_score:.4f})")
+        log_message(f"  [DRY-RUN] Arquivaria ponto {point_id} (decay_score={decay_score:.4f})")
         return True
     
     try:
@@ -150,29 +150,32 @@ def update_point_archived(point_id: str, collection: str, decay_score: float, dr
         resp.raise_for_status()
         return True
     except Exception as e:
-        log_message(f"  ❌ Failed to archive point {point_id}: {e}")
+        log_message(f"  ❌ Falha ao arquivar ponto {point_id}: {e}")
         return False
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Decay Scanner — Selective chunk archiving")
-    parser.add_argument("--collection", default=COLLECTION, help="Qdrant collection name")
-    parser.add_argument("--dry-run", action="store_true", help="Simulation — does not modify anything")
-    parser.add_argument("--threshold", type=float, default=0.1, help="Decay threshold for archiving")
+    parser = argparse.ArgumentParser(description="Decay Scanner — Arquivamento seletivo de chunks")
+    parser.add_argument("--collection", default=COLLECTION, help="Nome da coleção Qdrant")
+    parser.add_argument("--dry-run", action="store_true", help="Simulação — não modifica nada")
+    parser.add_argument("--threshold", type=float, default=0.1, help="Threshold de decay para arquivamento")
     args = parser.parse_args()
     
     collection = args.collection
     
-    # Ignore gabi_* collections
-    if collection.startswith("gabi_"):
-        log_message(f"⏭️ Collection '{collection}' is exempt (gabi_*). Exiting.")
-        return
+    # Ignorar coleções com prefixos exempt (via DECAY_EXEMPT_PREFIXES env var)
+    exempt_prefixes = os.environ.get("DECAY_EXEMPT_PREFIXES", "").split(",")
+    exempt_prefixes = [p.strip() for p in exempt_prefixes if p.strip()]
+    for prefix in exempt_prefixes:
+        if collection.startswith(prefix):
+            log_message(f"⏭️ Coleção '{collection}' é exempt (prefixo '{prefix}'). Saindo.")
+            return
     
-    log_message(f"🚀 Starting decay scanner (collection={collection}, threshold={args.threshold}, dry_run={args.dry_run})")
+    log_message(f"🚀 Iniciando decay scanner (collection={collection}, threshold={args.threshold}, dry_run={args.dry_run})")
     
-    # Metrics
+    # Métricas
     stats = {
         "scanned": 0,
         "archived": 0,
@@ -184,7 +187,7 @@ def main():
         "failed": 0,
     }
     
-    alerts = []  # List of alerts (decay < threshold but confidence >= 0.7)
+    alerts = []  # Lista de alertas (decay < threshold mas confidence >= 0.7)
     
     for point in scroll_chunks(collection):
         stats["scanned"] += 1
@@ -198,12 +201,12 @@ def main():
         last_accessed_at = payload.get("last_accessed_at", payload.get("created_at", now_iso()))
         confidence_score = payload.get("confidence_score", 1.0)
         
-        # Skip: already archived
+        # Skip: já arquivado
         if archived:
             stats["skipped_already_archived"] += 1
             continue
         
-        # Skip: human (exempt)
+        # Skip: humano (exempt)
         if source_type == "human":
             stats["skipped_human"] += 1
             continue
@@ -213,17 +216,17 @@ def main():
             stats["skipped_procedural"] += 1
             continue
         
-        # Skip: high importance
+        # Skip: alta importância
         if importance_score >= 0.7:
             stats["skipped_high_importance"] += 1
             continue
         
-        # Calculate decay
+        # Calcular decay
         decay_score = calculate_decay_score(last_accessed_at, importance_score)
         
-        # Check threshold
+        # Verificar threshold
         if decay_score < args.threshold:
-            # Decay-confidence rule: if confidence is high, alert instead of archiving
+            # Regra decay-confidence: se confidence alto, alerta em vez de arquivar
             if confidence_score >= 0.7:
                 stats["alerted"] += 1
                 alerts.append({
@@ -232,19 +235,19 @@ def main():
                     "confidence_score": round(confidence_score, 2),
                     "importance_score": round(importance_score, 2),
                     "age_days": round((datetime.now(timezone.utc) - datetime.fromisoformat(last_accessed_at.replace("Z", "+00:00"))).total_seconds() / 86400, 1),
-                    "reason": "decay < threshold but confidence >= 0.7 — manual review recommended",
+                    "reason": "decay < threshold mas confidence >= 0.7 — revisão manual recomendada",
                 })
-                log_message(f"  ⚠️ ALERT: point {point_id} (decay={decay_score:.4f}, confidence={confidence_score:.2f}) — manual review recommended")
+                log_message(f"  ⚠️ ALERTA: ponto {point_id} (decay={decay_score:.4f}, confidence={confidence_score:.2f}) — revisão manual recomendada")
             else:
-                # Archive
+                # Arquivar
                 ok = update_point_archived(point_id, collection, decay_score, args.dry_run)
                 if ok:
                     stats["archived"] += 1
-                    log_message(f"  📦 Archived: point {point_id} (decay={decay_score:.4f}, importance={importance_score:.2f})")
+                    log_message(f"  📦 Arquivado: ponto {point_id} (decay={decay_score:.4f}, importance={importance_score:.2f})")
                 else:
                     stats["failed"] += 1
     
-    # Structured JSON report
+    # Relatório JSON estruturado
     report = {
         "timestamp": now_iso(),
         "collection": collection,
@@ -262,22 +265,22 @@ def main():
     }
     
     log_message("=" * 60)
-    log_message("📊 DECAY SCANNER REPORT")
+    log_message("📊 RELATÓRIO DECAY SCANNER")
     log_message("=" * 60)
-    log_message(f"  Scanned:                {stats['scanned']}")
-    log_message(f"  Archived:               {stats['archived']}")
-    log_message(f"  Alerts (decay+conf.):   {stats['alerted']}")
+    log_message(f"  Escanados:              {stats['scanned']}")
+    log_message(f"  Arquivados:             {stats['archived']}")
+    log_message(f"  Alertas (decay+conf.):  {stats['alerted']}")
     log_message(f"  Skipped human:          {stats['skipped_human']}")
     log_message(f"  Skipped procedural:     {stats['skipped_procedural']}")
     log_message(f"  Skipped high imp.:      {stats['skipped_high_importance']}")
     log_message(f"  Skipped archived:       {stats['skipped_already_archived']}")
-    log_message(f"  Failures:               {stats['failed']}")
+    log_message(f"  Falhas:                 {stats['failed']}")
     log_message("=" * 60)
     
-    # JSON report to stderr (parseable)
+    # JSON report to stderr (parseável)
     print(json.dumps(report, ensure_ascii=False, indent=2), file=sys.stderr)
     
-    log_message("✅ Decay scanner complete.")
+    log_message("✅ Decay scanner completo.")
 
 
 if __name__ == "__main__":

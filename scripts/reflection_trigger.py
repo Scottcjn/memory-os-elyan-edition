@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
 reflection_trigger.py
-Checks whether the ARQ worker is idle (no pending/running jobs)
-and dispatches a micro_reflection via ARQ enqueue. Runs via cron every 5 minutes.
+Verifica se o worker ARQ está ocioso (sem jobs pendentes/em execução)
+e dispara micro_reflection via enqueue ARQ. Roda via cron a cada 5 minutos.
 
-Rules:
-- Only triggers if there are no pending or running jobs (idle)
-- Respects the max_per_hour budget (reads from env or defaults to 5)
-- Enqueues ARQ job "process_micro_reflection" (function registered in the worker)
-- Fail-open: if Redis/ARQ is unavailable, exits silently
-- Never blocks the critical query/ingestion path
+Regras:
+- Só dispara se não há jobs pendentes nem em execução (idle)
+- Respeita budget max_per_hour (lê do env ou assume 5)
+- Enfileira job ARQ "process_micro_reflection" (função registrada no worker)
+- Fail-open: se Redis/ARQ indisponível, sai silenciosamente
+- Nunca bloqueia o path crítico de query/ingestão
 
-Usage (cron):
-  */5 * * * * $VENV_DIR/bin/python $PROJECT_DIR/scripts/reflection_trigger.py >> $HERMES_LOG_DIR/reflection_trigger.cron.log 2>&1
+Uso (cron):
+  */5 * * * * /home/calli/ai-stack/cognitive-agent/venv/bin/python /home/calli/ai-stack/scripts/reflection_trigger.py >> /home/calli/.hermes/logs/reflection_trigger.cron.log 2>&1
 """
 
 import os
@@ -29,7 +29,7 @@ from arq.connections import RedisSettings
 import redis.asyncio as aioredis
 
 # ─── Config ────────────────────────────────────────────────────────────────
-ENV_PATH = Path(os.environ.get("MAA_ENV_PATH", "."))
+ENV_PATH = Path.home() / "ai-stack" / "cognitive-agent" / ".env"
 if ENV_PATH.exists():
     load_dotenv(ENV_PATH)
 
@@ -44,12 +44,7 @@ redis_settings = RedisSettings(
     password=REDIS_PASSWORD or None,
 )
 
-LOG_FILE = Path(
-    os.environ.get(
-        "REFLECTION_LOG_PATH",
-        str(Path.home() / ".hermes" / "logs" / "reflection_trigger.log")
-    )
-)
+LOG_FILE = Path.home() / ".hermes" / "logs" / "reflection_trigger.log"
 
 
 def log_message(msg: str):
@@ -65,7 +60,7 @@ def log_message(msg: str):
 
 
 async def is_idle() -> bool:
-    """Check whether there are any pending or running jobs in ARQ."""
+    """Verifica se não há jobs pendentes nem em execução no ARQ."""
     try:
         r = aioredis.Redis(
             host=REDIS_HOST, port=REDIS_PORT,
@@ -73,7 +68,7 @@ async def is_idle() -> bool:
             decode_responses=True,
         )
 
-        # ARQ stores jobs in queues like 'arq:queue:default'
+        # ARQ armazena jobs em filas tipo 'arq:queue:default'
         queue_names = ["arq:queue:default"]
         qr_prefix = os.environ.get("ARQ_QUEUE_PREFIX", "arq:queue:")
         if qr_prefix:
@@ -90,7 +85,7 @@ async def is_idle() -> bool:
             except Exception:
                 pass
 
-        # In-progress jobs: ARQ uses sets like 'arq:in-progress:...'
+        # Jobs em execução: ARQ usa sets tipo 'arq:in-progress:...'
         in_progress_keys = await r.keys("arq:in-progress:*")
         total_in_progress = 0
         for key in in_progress_keys:
@@ -102,20 +97,15 @@ async def is_idle() -> bool:
         await r.aclose()
         return (total_pending + total_in_progress) == 0
     except Exception as e:
-        log_message(f"Error checking idle status: {e}")
-        return False  # fail-safe: if unable to verify, do not trigger
+        log_message(f"Erro ao verificar idle: {e}")
+        return False  # fail-safe: se não conseguir verificar, não dispara
 
 
 async def check_budget() -> tuple[bool, int, int]:
-    """Return (allowed, used, max) based on the hourly counter in SQLite."""
+    """Retorna (permitido, used, max) baseado no contador da hora no SQLite."""
     try:
         import sqlite3
-        db_path = Path(
-            os.environ.get(
-                "STATE_DB_PATH",
-                str(Path.home() / ".hermes" / "state.db")
-            )
-        )
+        db_path = Path.home() / ".hermes" / "state.db"
         hour_window = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H")
         conn = sqlite3.connect(str(db_path))
         c = conn.cursor()
@@ -125,20 +115,15 @@ async def check_budget() -> tuple[bool, int, int]:
         conn.close()
         return (used < MAX_REFLECTIONS_PER_HOUR, used, MAX_REFLECTIONS_PER_HOUR)
     except Exception as e:
-        log_message(f"Error checking budget: {e}")
+        log_message(f"Erro ao verificar budget: {e}")
         return (True, 0, MAX_REFLECTIONS_PER_HOUR)  # fail-open
 
 
 def increment_budget():
-    """Increment the reflection counter in SQLite."""
+    """Incrementa o contador de reflections no SQLite."""
     try:
         import sqlite3
-        db_path = Path(
-            os.environ.get(
-                "STATE_DB_PATH",
-                str(Path.home() / ".hermes" / "state.db")
-            )
-        )
+        db_path = Path.home() / ".hermes" / "state.db"
         hour_window = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H")
         conn = sqlite3.connect(str(db_path))
         c = conn.cursor()
@@ -151,11 +136,11 @@ def increment_budget():
         conn.commit()
         conn.close()
     except Exception as e:
-        log_message(f"Error incrementing budget: {e}")
+        log_message(f"Erro ao incrementar budget: {e}")
 
 
 async def trigger_micro_reflection(dry_run: bool = False) -> dict:
-    """Pipeline: idle check → budget check → ARQ enqueue → increment budget."""
+    """Pipeline: idle check → budget check → enqueue ARQ → increment budget."""
 
     # 1. Idle check
     idle = await is_idle()
@@ -186,10 +171,8 @@ async def trigger_micro_reflection(dry_run: bool = False) -> dict:
         job = await pool.enqueue_job("process_micro_reflection")
         await pool.aclose()
 
-        # 4. Budget accounting is owned by the worker after actual processing.
-        #    NOT incremented here — the worker's increment_budget() call
-        #    handles this, preventing double-counting.
-        # increment_budget()
+        # 4. Increment budget
+        increment_budget()
 
         return {
             "status": "triggered",
@@ -199,13 +182,13 @@ async def trigger_micro_reflection(dry_run: bool = False) -> dict:
             "max": max_ref,
         }
     except Exception as e:
-        log_message(f"Error enqueuing micro_reflection: {e}")
+        log_message(f"Erro ao enfileirar micro_reflection: {e}")
         return {"status": "error", "error": str(e), "triggered": False}
 
 
 async def main():
     parser = argparse.ArgumentParser(description="Reflection Trigger — idle detection")
-    parser.add_argument("--dry-run", action="store_true", help="Simulate, do not enqueue")
+    parser.add_argument("--dry-run", action="store_true", help="Simula, não enfileira")
     args = parser.parse_args()
 
     result = await trigger_micro_reflection(dry_run=args.dry_run)

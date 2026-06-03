@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-Semantic Pre-Validator — Decision linter based on the knowledge_base.
-Queries the vault before I/O actions or API calls.
+Pré-validador Semântico — Linter de decisão baseado no knowledge_base.
+Consulta o vault antes de ações de I/O ou chamadas de API.
 
-Usage:
-  python3 pre_validator.py "POST to Qdrant upsert"                      # should find pitfalls
-  python3 pre_validator.py --json "use Claude from Anthropic"            # JSON output
-  python3 pre_validator.py --domain qdrant,api "modify docker-compose"   # restrict search
+Uso:
+  python3 pre_validator.py "fazer POST no upsert do Qdrant"               # deve findar pitfall
+  python3 pre_validator.py --json "usar Claude da Anthropic"             # JSON output
+  python3 pre_validator.py --domain qdrant,api "modificar docker-compose" # restringe busca
 
 Exit codes:
-  0 = pass/warn  (action may proceed)
-  1 = blocked    (action must be aborted)
+  0 = pass/warn  (ação pode prosseguir)
+  1 = blocked    (ação deve ser abortada)
 
-Fail-open: if OpenRouter or Qdrant is offline, allows execution with a warning.
+Fail-open: se OpenRouter ou Qdrant offline, permite execução com alerta.
 """
 
 import os
@@ -28,11 +28,7 @@ OPENROUTER_KEY = os.environ.get("OPENROUTER_API_KEY")
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
 COLLECTION = os.environ.get("QDRANT_COLLECTION", "knowledge_base")
 if not OPENROUTER_KEY:
-    _env_path = os.environ.get("ENV_PATH", "")
-    if _env_path:
-        _env = Path(_env_path)
-    else:
-        _env = Path.home() / ".env"
+    _env = Path.home() / ".env"
     if _env.exists():
         for ln in _env.read_text().splitlines():
             if ln.startswith("OPENROUTER_API_KEY="):
@@ -41,7 +37,7 @@ if not OPENROUTER_KEY:
 EMBEDDING_MODEL = "qwen/qwen3-embedding-8b"
 TOP_K = 5
 SCORE_THRESHOLD = 0.60
-WARN_THRESHOLD = 0.75          # pure wiki docs need a higher score for a warning
+WARN_THRESHOLD = 0.75          # docs wiki pura precisam de score mais alto para aviso
 BLOCK_SEVERITIES = {"critical", "high"}
 WARN_SEVERITIES  = {"medium"}
 RULE_SOURCES = {"reflection", "decision", "rule", "pitfall", "insight"}
@@ -49,15 +45,15 @@ REQUEST_TIMEOUT = 10
 
 # ─── Restriction Patterns in wiki text ─────────────────────────────────────
 RESTRICTION_KEYWORDS = [
-    "do not use", "must not", "cannot", "never use", "avoid",
-    "forbidden", "not recommended", "anti-pattern", "common mistake",
-    "caution", "warning", "important:", "⚠️", "🚫",
-    "must use", "must always", "requires", "mandatory",
-    "keep", "do not change", "do not modify", "freeze",
+    "não usar", "não deve", "não pode", "nunca usar", "evitar",
+    "proibido", "não recomendado", "anti-padrão", "erro comum",
+    "cuidado", "atenção", "importante:", "⚠️", "🚫",
+    "deve usar", "deve sempre", "requer", "obrigatório",
+    "manter", "não alterar", "não modificar", "congelar",
 ]
 
 def contains_restriction(text: str) -> bool:
-    """Check whether text contains restriction/decision patterns."""
+    """Verifica se um texto contém padrões de restrição/decisão."""
     if not text:
         return False
     text_lower = text.lower()
@@ -123,7 +119,7 @@ def search_knowledge_base(vector: List[float], domain_tags: List[str]) -> List[D
             tags = [str(t).lower() for t in pld.get("tags", [])]
             score = item.get("score", 0)
             
-            # If domain filters requested, require overlap
+            # Se pediu filtros de domínio, exige overlap
             if domain_tags:
                 dom_low = [d.lower() for d in domain_tags]
                 if not set(dom_low) & set(tags):
@@ -132,7 +128,7 @@ def search_knowledge_base(vector: List[float], domain_tags: List[str]) -> List[D
             hits.append({
                 "id"     : str(item.get("id", "")),
                 "score"  : score,
-                "title"  : pld.get("title", "Untitled"),
+                "title"  : pld.get("title", "Sem título"),
                 "text"   : (pld.get("text", "") or "")[:400],
                 "source" : src,
                 "severity": sev,
@@ -145,30 +141,30 @@ def search_knowledge_base(vector: List[float], domain_tags: List[str]) -> List[D
         return []
 
 def is_rule_hit(hit: Dict) -> bool:
-    """Return True if the hit contains an explicit rule (reflection/decision/rule/insight/pitfall)."""
+    """Retorna True se o hit contém regra explícita (reflection/decision/rule/insight/pitfall)."""
     return any(s in hit["source"] for s in RULE_SOURCES)
 
 def classify_hit(hit: Dict, action_desc: str) -> str:
     """
-    Return hit category: 'block', 'warn', 'info', or 'none'.
-    Considers both source=reflection/decision/rule and restriction patterns
-    embedded in wiki document text.
+    Retorna categoria do hit: 'block', 'warn', 'info', ou 'none'.
+    Considera tanto source=reflection/decision/rule quanto padrões de restrição
+    embutidos no texto de documentos wiki.
     """
     sev = hit.get("severity", "low")
     is_rule = is_rule_hit(hit) or contains_restriction(hit.get("text", ""))
     score = hit.get("score", 0)
     
-    # If text contains restriction, give it more weight
+    # Se contém restrição no texto, dá mais peso
     restriction_bonus = 0.08 if contains_restriction(hit.get("text", "")) else 0
     effective_score = score + restriction_bonus
     
-    # Proximity: if the action term (e.g. "POST") appears near a keyword in the text
+    # Proximidade: se a ação (ex: "POST") aparece no texto próximo a uma keyword
     action_terms = set(action_desc.lower().split())
     text_lower = (hit.get("text", "") or "").lower()
     text_words = set(text_lower.split())
     proximity_match = len(action_terms & text_words) > 0
     
-    # If restriction + proximity → elevate severity
+    # Se tem restrição + proximidade → eleva severidade
     has_restriction = contains_restriction(hit.get("text", "")) and proximity_match
     
     if is_rule or has_restriction:
@@ -177,7 +173,7 @@ def classify_hit(hit: Dict, action_desc: str) -> str:
         elif sev in WARN_SEVERITIES or (has_restriction and effective_score >= SCORE_THRESHOLD):
             return "warn"
     
-    # For normal wiki documents, only warn if score is very high
+    # Para documentos wiki normais, só avisa se score muito alto
     if effective_score >= WARN_THRESHOLD:
         return "warn"
     if effective_score >= SCORE_THRESHOLD:
@@ -189,7 +185,7 @@ def validate_action(action_description: str, domain_tags: Optional[List[str]] = 
         dom = domain_tags or infer_domain_tags(action_description)
         vec = embed_text(action_description)
         if vec is None:
-            return {"status": "pass", "blocked": False, "message": "⚠️  Validator offline. Proceeding with caution.", "action": action_description}
+            return {"status": "pass", "blocked": False, "message": "⚠️  Validador offline. Executando com cautela.", "action": action_description}
         
         hits = search_knowledge_base(vec, dom)
         blockers = []
@@ -197,7 +193,7 @@ def validate_action(action_description: str, domain_tags: Optional[List[str]] = 
         infos = []
         
         for h in hits:
-            cat = classify_hit(h, action_description)
+            cat = classify_hit(h)
             if cat == "block":
                 blockers.append(h)
             elif cat == "warn":
@@ -206,12 +202,12 @@ def validate_action(action_description: str, domain_tags: Optional[List[str]] = 
                 infos.append(h)
         
         if blockers:
-            lines = [f"🚫 ACTION BLOCKED — {len(blockers)} critical rule(s) in the vault:"]
+            lines = [f"🚫 AÇÃO BLOQUEADA — {len(blockers)} regra(s) crítica(s) no vault:"]
             for b in blockers:
                 lines.append(f"  • [{b['severity'].upper()}] {b['title']} (score: {b['score']:.2f})")
                 lines.append(f"    {b['text'][:200]}...")
             lines.append("")
-            lines.append("Override? Type 'force' (not recommended).")
+            lines.append("Ignorar? Digite 'forçar' (não recomendado).")
             return {
                 "status": "blocked", "blocked": True,
                 "blockers": blockers, "warnings": warnings,
@@ -219,7 +215,7 @@ def validate_action(action_description: str, domain_tags: Optional[List[str]] = 
             }
         
         if warnings:
-            lines = [f"⚠️  {len(warnings)} warning(s) found in the vault:"]
+            lines = [f"⚠️  {len(warnings)} aviso(s) encontrado(s) no vault:"]
             for w in warnings:
                 lines.append(f"  • [{w['severity'].upper()}] {w['title']} (score: {w['score']:.2f})")
                 lines.append(f"    {w['text'][:200]}...")
@@ -233,34 +229,34 @@ def validate_action(action_description: str, domain_tags: Optional[List[str]] = 
             return {
                 "status": "info", "blocked": False,
                 "infos": infos,
-                "message": f"ℹ️  {len(infos)} relevant document(s), none critical.",
+                "message": f"ℹ️  {len(infos)} documento(s) relevante(s), nenhum crítico.",
                 "action": action_description, "domain": dom,
             }
         
         return {
             "status": "pass", "blocked": False,
-            "message": "No relevant insights found. Execution authorized.",
+            "message": "Nenhum insight relevante encontrado. Execução autorizada.",
             "action": action_description, "domain": dom,
         }
     except Exception as e:
         return {
             "status": "pass", "blocked": False,
-            "message": f"Validator failed ({e}). Proceeding with caution.",
+            "message": f"Validador falhou ({e}). Executando com cautela.",
             "action": action_description, "domain": [],
         }
 
 # ─── Main ───────────────────────────────────────────────────────────────────
 def main():
     import argparse
-    p = argparse.ArgumentParser(description="Semantic Pre-Validator")
-    p.add_argument("action", nargs="?", help="Action description")
-    p.add_argument("--domain", help="Comma-separated domain tags")
-    p.add_argument("--json", action="store_true", help="JSON output")
-    p.add_argument("--silent", action="store_true", help="Silent — exit code only")
-    p.add_argument("--force-block", action="store_true", help="Force block (testing)")
+    p = argparse.ArgumentParser(description="Pré-validador Semântico")
+    p.add_argument("action", nargs="?", help="Descrição da ação")
+    p.add_argument("--domain", help="Tags de domínio separadas por vírgula")
+    p.add_argument("--json", action="store_true", help="Saída JSON")
+    p.add_argument("--silent", action="store_true", help="Silencioso — só exit code")
+    p.add_argument("--force-block", action="store_true", help="Forçar bloqueio (teste)")
     args = p.parse_args()
     
-    action = args.action or sys.stdin.read().strip() or "POST to Qdrant upsert endpoint"
+    action = args.action or sys.stdin.read().strip() or "fazer POST no endpoint de upsert do Qdrant"
     dom = [x.strip() for x in args.domain.split(",")] if args.domain else None
     
     res = validate_action(action, dom)
@@ -273,7 +269,7 @@ def main():
     elif not args.silent:
         print(res["message"])
         if res["blocked"]:
-            print("\n(Use --force-block to test validator bypass)")
+            print("\n(Use --force-block para testar bypass de validador)")
     
     sys.exit(1 if res["blocked"] else 0)
 
