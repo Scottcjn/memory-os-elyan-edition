@@ -175,6 +175,7 @@ def find_near_duplicates(chunks: List[Dict],
             requests_list.append(
                 models.QueryRequest(
                     query=vec,
+                    using="dense",
                     limit=1,
                     score_threshold=threshold,
                     filter=models.Filter(
