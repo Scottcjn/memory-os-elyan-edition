@@ -24,22 +24,55 @@ logger = logging.getLogger(__name__)
 LINKS_START = "<!-- ICARUS_OBSIDIAN_LINKS_START -->"
 LINKS_END = "<!-- ICARUS_OBSIDIAN_LINKS_END -->"
 
+# Lazy index: (agent, id) → filename stem. Rebuilt when fabric dir mtime changes.
+_entry_index: dict[tuple[str, str], str] = {}
+_entry_index_mtime: float = 0.0
 
-def _find_entry_file(ref: str, fabric_dir: Path) -> Optional[str]:
-    """Resolve agent:id ref to a filename (without .md extension)."""
-    if ":" not in ref:
-        return None
-    agent, entry_id = ref.split(":", 1)
-    if not agent or not entry_id:
-        return None
+
+def _build_entry_index(fabric_dir: Path) -> dict[tuple[str, str], str]:
+    """Scan fabric_dir + fabric_dir/cold and build an (agent, id) → stem index."""
+    index: dict[tuple[str, str], str] = {}
     for d in (fabric_dir, fabric_dir / "cold"):
         if not d.exists():
             continue
         for f in d.glob("*.md"):
             h = _parse_head(f)
-            if h.get("agent") == agent and h.get("id") == entry_id:
-                return f.stem  # filename without .md
-    return None
+            agent = h.get("agent", "")
+            entry_id = h.get("id", "")
+            if agent and entry_id:
+                index[(agent, str(entry_id))] = f.stem
+    return index
+
+
+def _find_entry_file(ref: str, fabric_dir: Path) -> Optional[str]:
+    """Resolve agent:id ref to a filename (without .md extension).
+
+    Uses an in-memory index invalidated by directory mtime to avoid
+    scanning and parsing all fabric entries on every lookup.
+    """
+    global _entry_index, _entry_index_mtime
+
+    if ":" not in ref:
+        return None
+    agent, entry_id = ref.split(":", 1)
+    if not agent or not entry_id:
+        return None
+
+    # Check if index is stale — rebuild if any fabric directory changed
+    latest_mtime = 0.0
+    for d in (fabric_dir, fabric_dir / "cold"):
+        try:
+            mtime = d.stat().st_mtime
+            if mtime > latest_mtime:
+                latest_mtime = mtime
+        except OSError:
+            pass
+
+    if latest_mtime > _entry_index_mtime or not _entry_index:
+        _entry_index = _build_entry_index(fabric_dir)
+        _entry_index_mtime = latest_mtime
+
+    return _entry_index.get((agent, entry_id))
 
 
 def format_entry(filepath: Path, fabric_dir: Path, review_of: str = "", revises: str = ""):

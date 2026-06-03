@@ -128,34 +128,56 @@ def scan_all():
     return entries
 
 
-def _resolve_ref(ref, entries):
+def _resolve_ref(ref, entries,
+                 index_by_id=None, index_by_cycle=None,
+                 by_agent_entries=None):
     """Resolve a ref string (agent:id) to a specific entry.
 
+    When indices are provided, uses O(1) lookups instead of
+    O(n) linear scans over the full entries list.
+
     Checks in priority order:
-    1. id field match (exact)
-    2. agent:cycle match
-    3. agent:timestamp substring
-    4. agent:filename substring
-    First match wins. Returns None if unresolvable.
+    1. id field match (exact, via index_by_id)
+    2. cycle field match (exact, via index_by_cycle)
+    3. timestamp substring (scoped to agent, via by_agent_entries)
+    4. filename substring (scoped to agent, via by_agent_entries)
     """
     if ":" not in ref:
         return None
     ref_agent, ref_id = ref.split(":", 1)
     if not ref_agent or not ref_id:
         return None
-    # 1. Exact id field match
+
+    # Fast path: exact index lookups
+    if index_by_id is not None:
+        entry = index_by_id.get((ref_agent, str(ref_id)))
+        if entry:
+            return entry
+        if index_by_cycle is not None:
+            entry = index_by_cycle.get((ref_agent, str(ref_id)))
+            if entry:
+                return entry
+        # Scoped substring scans — only search agent's own entries
+        if by_agent_entries is not None:
+            candidates = by_agent_entries.get(ref_agent, [])
+            for o in candidates:
+                if str(ref_id) in str(o.get("timestamp", "")):
+                    return o
+            for o in candidates:
+                if str(ref_id) in o.get("file", ""):
+                    return o
+        return None
+
+    # Slow path (no indices) — fallback for standalone calls
     for o in entries:
         if o.get("agent") == ref_agent and str(o.get("id", "")) == str(ref_id):
             return o
-    # 2. Cycle field match
     for o in entries:
         if o.get("agent") == ref_agent and str(o.get("cycle", "")) == str(ref_id):
             return o
-    # 3. Timestamp substring match
     for o in entries:
         if o.get("agent") == ref_agent and str(ref_id) in str(o.get("timestamp", "")):
             return o
-    # 4. Filename substring match
     for o in entries:
         if o.get("agent") == ref_agent and str(ref_id) in o.get("file", ""):
             return o
@@ -195,6 +217,20 @@ def extract_pairs(entries):
             refs = [r.strip() for r in refs.split(",") if r.strip()]
         agent = e.get("agent", "")
         by_ref[f"{agent}:{e.get('file', '')}"] = e
+
+    # Build O(1) lookup indices for _resolve_ref (avoids O(n²) in large corpuses)
+    index_by_id = {}
+    index_by_cycle = {}
+    by_agent_entries = {}
+    for e in entries:
+        agent = e.get("agent", "")
+        eid = str(e.get("id", ""))
+        cycle = str(e.get("cycle", ""))
+        if agent and eid:
+            index_by_id[(agent, eid)] = e
+        if agent and cycle:
+            index_by_cycle.setdefault((agent, cycle), e)  # first wins
+        by_agent_entries.setdefault(agent, []).append(e)
 
     def add_pair(user_msg, output, metadata, dedupe_key=None):
         nonlocal pairs
@@ -279,7 +315,7 @@ def extract_pairs(entries):
         # ── REVIEW PAIRS: only pair explicitly linked entries ──
         if entry_type == "review" and refs:
             for ref in refs:
-                orig = _resolve_ref(ref, entries)
+                orig = _resolve_ref(ref, entries, index_by_id, index_by_cycle, by_agent_entries)
                 if not orig:
                     continue
                 # Find revision: must explicitly ref back to the review or original
@@ -321,7 +357,7 @@ def extract_pairs(entries):
         # ── REVIEW PAIRS via review_of/revises (v3 plugin path) ──
         if entry_type == "review" and e.get("review_of"):
             ref = e["review_of"]
-            orig = _resolve_ref(ref, entries)
+            orig = _resolve_ref(ref, entries, index_by_id, index_by_cycle, by_agent_entries)
             if orig:
                 ref_agent = ref.split(":")[0] if ":" in ref else ""
                 candidates = [
@@ -341,7 +377,7 @@ def extract_pairs(entries):
 
         # ── CROSS-PLATFORM via review_of ──
         if e.get("review_of") and platform:
-            source = _resolve_ref(e["review_of"], entries)
+            source = _resolve_ref(e["review_of"], entries, index_by_id, index_by_cycle, by_agent_entries)
             if source:
                 src_plat = source.get("platform", "")
                 if src_plat and src_plat != platform:
@@ -357,7 +393,7 @@ def extract_pairs(entries):
         # ── CROSS-PLATFORM PAIRS: resolve ref to specific entry ──
         if refs and platform:
             for ref in refs:
-                source = _resolve_ref(ref, entries)
+                source = _resolve_ref(ref, entries, index_by_id, index_by_cycle, by_agent_entries)
                 if not source:
                     continue
                 src_plat = source.get("platform", "")
