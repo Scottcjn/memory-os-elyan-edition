@@ -11,6 +11,7 @@ import httpx
 logger = logging.getLogger("cognitive-worker.embedding")
 
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+EMBEDDING_API_KEY = os.environ.get("EMBEDDING_API_KEY")  # no fallback — explicit per-branch
 EMBEDDING_DIMS = int(os.environ.get("EMBEDDING_DIMS", "4096"))
 EMBEDDING_API_BASE = os.environ.get(
     "EMBEDDING_API_BASE", "https://openrouter.ai/api/v1"
@@ -33,6 +34,9 @@ async def get_embedding(text: str) -> list[float]:
         headers["Authorization"] = f"Bearer {OPENROUTER_API_KEY}"
         headers["HTTP-Referer"] = "https://localhost"
         headers["X-Title"] = "Cognitive-Agent-MaaS"
+    elif EMBEDDING_API_KEY:
+        headers["Authorization"] = f"Bearer {EMBEDDING_API_KEY}"
+    # else: no auth header — localhost or unauthenticated endpoint
 
     payload = {
         "model": EMBEDDING_MODEL,

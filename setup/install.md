@@ -95,6 +95,11 @@ EMBEDDING_DIMS=4096
 # EMBEDDING_API_BASE=https://openrouter.ai/api/v1
 # EMBEDDING_MODEL=qwen/qwen3-embedding-8b
 
+# Optional — API key for non-OpenRouter authenticated embedding endpoints
+# (vLLM with --api-key, custom hosted services). Not needed for OpenRouter
+# or local unauthenticated providers.
+# EMBEDDING_API_KEY=your-key-here
+
 # Optional
 ICARUS_OBSIDIAN=1
 ICARUS_RESULT_MAX_CHARS=500
