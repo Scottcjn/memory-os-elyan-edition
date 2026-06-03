@@ -39,6 +39,12 @@ services:
     environment:
       QDRANT__SERVICE__HTTP_PORT: "6333"
       QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   worker:
     build:
@@ -47,7 +53,7 @@ services:
     restart: unless-stopped
     depends_on:
       qdrant:
-        condition: service_started
+        condition: service_healthy
       redis:
         condition: service_healthy
     environment:
@@ -66,7 +72,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - ${WIKI_PATH:-./wiki}:/wiki:ro
-      - ${HERMES_HOME:-~/.hermes}:/hermes:rw
+      - ${HERMES_HOME:-./hermes}:/hermes:rw
+      - ${FABRIC_DIR:-./fabric}:/fabric:rw
 
 volumes:
   redis_data:

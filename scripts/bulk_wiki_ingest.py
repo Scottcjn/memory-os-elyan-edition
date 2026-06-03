@@ -29,8 +29,8 @@ except ImportError:
 OPENROUTER_KEY = os.environ.get("OPENROUTER_API_KEY")
 QDRANT_URL = "http://localhost:6333"
 COLLECTION = "knowledge_base"
-WIKI_ROOT = Path.home() / "Vault" / "wiki"
-EMBEDDING_MODEL = "qwen/qwen3-embedding-8b"
+WIKI_ROOT = Path(os.environ.get("WIKI_ROOT", str(Path.home() / "Vault" / "wiki")))
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "qwen/qwen3-embedding-8b")
 EMBEDDING_DIMS = 4096
 MAX_TEXT_LEN = 8000      # truncate text for embedding (model context limit)
 BATCH_SIZE = 8           # parallel embedding requests

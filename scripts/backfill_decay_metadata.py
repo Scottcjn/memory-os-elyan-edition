@@ -50,7 +50,7 @@ COLLECTION = "knowledge_base"
 BATCH_SIZE = 200
 SCROLL_LIMIT = 200
 LOG_FILE = Path.home() / ".hermes/logs/decay_scanner.log"
-VAULT_ROOT = Path.home() / "Vault"
+VAULT_ROOT = Path(os.environ.get("VAULT_PATH", str(Path.home() / "Vault")))
 
 # ─── Heuristics ──────────────────────────────────────────────────────────────
 CONFIDENCE_BY_SOURCE = {

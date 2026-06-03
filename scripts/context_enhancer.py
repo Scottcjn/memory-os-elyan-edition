@@ -41,7 +41,7 @@ if not OPENROUTER_KEY:
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
 COLLECTION = os.environ.get("QDRANT_COLLECTION", "knowledge_base")
 
-EMBEDDING_MODEL = "qwen/qwen3-embedding-8b"
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "qwen/qwen3-embedding-8b")
 TOP_K_DEFAULT = 3
 SCORE_THRESHOLD_DEFAULT = 0.55
 MAX_TEXT_LEN = 8000

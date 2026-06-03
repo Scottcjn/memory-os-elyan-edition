@@ -22,7 +22,7 @@ ENV_PATH = Path.home() / "ai-stack" / "cognitive-agent" / ".env"
 if ENV_PATH.exists():
     load_dotenv(ENV_PATH)
 
-WIKI_ROOT = Path.home() / "Vault" / "wiki"
+WIKI_ROOT = Path(os.environ.get("WIKI_ROOT", str(Path.home() / "Vault" / "wiki")))
 STATE_FILE = Path.home() / ".hermes" / "wiki_ingest_state.json"
 FAILURES_FILE = Path.home() / ".hermes" / "wiki_ingest_failures.json"
 REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD", "")
