@@ -1,0 +1,21 @@
+# Docker build context exclusion
+.env
+*.key
+*.pem
+*.p12
+.git
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+docker/.env

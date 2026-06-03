@@ -19,7 +19,46 @@
 cp -r icarus/ ~/.hermes/plugins/icarus/
 ```
 
-### 2. Enable Icarus in Hermes Config
+### 2. Database Setup
+
+Install the Python dependencies first:
+
+```bash
+pip install -r requirements.txt
+```
+
+Memory OS requires two SQLite databases with FTS5 full-text search indexes:
+`state.db` (session history, lineage, reflection budget) and `memory_store.db`
+(facts, entities, memory banks). The setup script creates both with idempotent
+`CREATE TABLE IF NOT EXISTS` statements — safe to run multiple times.
+
+```bash
+python setup/setup_db.py
+```
+
+**What it creates:**
+
+| Database | Tables |
+|---|---|
+| `state.db` | `sessions`, `messages`, `messages_fts` (FTS5), `messages_fts_trigram`, `lineage`, `reflection_budget`, `compression_locks`, `schema_version`, `state_meta` |
+| `memory_store.db` | `entities`, `facts`, `facts_fts` (FTS5), `fact_entities`, `memory_banks` |
+
+Options:
+
+```bash
+python setup/setup_db.py --dry-run          # preview without executing
+python setup/setup_db.py --state-db /custom/path/state.db
+python setup/setup_db.py --memory-db /custom/path/memory_store.db
+```
+
+Environment variables override defaults:
+
+```bash
+export STATE_DB_PATH=/home/your-user/.hermes/state.db
+export MEMORY_STORE_PATH=/home/your-user/.hermes/memory_store.db
+```
+
+### 3. Enable Icarus in Hermes Config
 
 Icarus must be registered as an enabled plugin. Edit `~/.hermes/config.yaml`:
 
@@ -42,7 +81,7 @@ hermes status
 # → Should show: icarus v0.3.0 (16 tools, 4 hooks)
 ```
 
-### 3. Docker Infrastructure
+### 4. Docker Infrastructure
 
 The compose file lives in the `docker/` directory of this repository and must be run **in-place** — the worker build context (`./worker`) is relative to the compose file location.
 
@@ -75,7 +114,7 @@ curl -s http://localhost:6333/healthz  # → {"title":"ok","version":"1.17.1"}
 redis-cli -a "$REDIS_PASSWORD" ping    # → PONG
 ```
 
-### 4. Environment Variables
+### 5. Environment Variables
 
 Add to your Hermes profile `.env` (e.g. `~/.hermes/.env`):
 
@@ -108,7 +147,7 @@ ICARUS_TASK_MAX_CHARS=300
 
 **⚠️ Use absolute paths.** The Hermes gateway runs as a systemd service — `~` is not expanded. Always use `/home/your-user/...`.
 
-### 5. Core File Modifications
+### 6. Core File Modifications
 
 Apply the additions documented in [setup/rulebook.md](rulebook.md) and
 [modifications/soul-rulebook.md](../modifications/soul-rulebook.md):
@@ -129,7 +168,7 @@ These modifications ensure the agent treats injected memory as more
 authoritative than training knowledge, and knows where to find
 persisted information without re-discovering it.
 
-### 6. Wiki + Vault Setup
+### 7. Wiki + Vault Setup
 
 Memory OS stores its knowledge pipeline inside an Obsidian vault. The vault
 path is user-specific — set it as an environment variable first:
@@ -159,7 +198,7 @@ MOC generation, install [vault-curator](https://github.com/ClaudioDrews/vault-cu
 as a separate tool. It runs independently and is not required for Memory OS
 core functionality.
 
-### 7. Maintenance Scripts
+### 8. Maintenance Scripts
 
 The `scripts/` directory in this repository contains the maintenance tools
 that keep the memory stack healthy. Copy them to a location of your choice
@@ -217,7 +256,7 @@ scanner will find zero eligible points.
 `DEDUP_EXEMPT_PREFIXES` env vars (comma-separated prefixes) to exclude
 specific Qdrant collections from automated maintenance.
 
-### 8. Gateway Restart
+### 9. Gateway Restart
 
 ```bash
 hermes gateway restart
@@ -225,7 +264,7 @@ hermes gateway restart
 
 Changes to `.env`, `SOUL.md`, `rulebook.md`, and Icarus plugin code only take effect after restart.
 
-### 9. Verify
+### 10. Verify
 
 Inside Hermes chat:
 
