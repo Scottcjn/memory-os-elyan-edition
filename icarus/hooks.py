@@ -17,8 +17,80 @@ _OPENROUTER_KEY = (
     or os.environ.get("OPENROUTER_DS_API_KEY", "")
     or os.environ.get("OPENROUTER_API_KEY", "")
 )
+_DEEPSEEK_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+
+# Provider-agnostic endpoint resolution.
+# Consumers call _resolve_llm_endpoint() and _resolve_llm_headers()
+# instead of reading the globals or hardcoding URLs.
+# Priority: 1) ICARUS_ENDPOINT + ICARUS_API_KEY_ENV override,
+#           2) DEEPSEEK_API_KEY → api.deepseek.com,
+#           3) OPENROUTER_API_KEY → openrouter.ai (existing behaviour).
+_ICARUS_ENDPOINT = os.environ.get("ICARUS_ENDPOINT", "").strip().rstrip("/")
+_ICARUS_API_KEY_ENV = os.environ.get("ICARUS_API_KEY_ENV", "").strip()
+
 _EXTRACTION_MODEL = os.environ.get("ICARUS_EXTRACTION_MODEL", "deepseek/deepseek-v4-flash")
 _EXTRACTION_MAX_TOKENS = int(os.environ.get("ICARUS_EXTRACTION_MAX_TOKENS", "1024"))
+
+
+def _resolve_llm_endpoint() -> str:
+    """Return the base URL for LLM chat completions.
+
+    Priority:
+      1. ``ICARUS_ENDPOINT`` env var (fully custom).
+      2. ``api.deepseek.com/v1/chat/completions`` when ``DEEPSEEK_API_KEY`` is set.
+      3. ``https://openrouter.ai/api/v1/chat/completions`` (default / legacy).
+    """
+    if _ICARUS_ENDPOINT:
+        return _ICARUS_ENDPOINT
+    if _DEEPSEEK_KEY:
+        return "https://api.deepseek.com/v1/chat/completions"
+    return "https://openrouter.ai/api/v1/chat/completions"
+
+
+def _resolve_llm_api_key() -> str:
+    """Return the API key for the resolved endpoint.
+
+    Priority (mirrors _resolve_llm_endpoint):
+      1. The env var named by ``ICARUS_API_KEY_ENV``, if set.
+      2. ``DEEPSEEK_API_KEY`` when available.
+      3. ``OPENROUTER_API_KEY`` (default).
+    """
+    if _ICARUS_API_KEY_ENV:
+        custom_key = os.environ.get(_ICARUS_API_KEY_ENV, "")
+        if custom_key:
+            return custom_key
+    if _DEEPSEEK_KEY:
+        return _DEEPSEEK_KEY
+    return _OPENROUTER_KEY
+
+
+def _resolve_llm_headers(api_key: str) -> dict:
+    """Return the HTTP headers for the resolved endpoint."""
+    endpoint = _resolve_llm_endpoint()
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    # OpenRouter requires referer + title headers
+    if "openrouter.ai" in endpoint:
+        headers["HTTP-Referer"] = "https://hermes-agent.local"
+        headers["X-Title"] = "Icarus Session Extraction"
+    return headers
+
+
+def _resolve_llm_model() -> str:
+    """Return the model name compatible with the resolved endpoint.
+
+    OpenRouter uses ``provider/model`` slugs (e.g. ``deepseek/deepseek-v4-flash``).
+    Direct API endpoints (DeepSeek, custom) use bare model names.
+    """
+    model = _EXTRACTION_MODEL
+    endpoint = _resolve_llm_endpoint()
+    if "openrouter.ai" not in endpoint and "/" in model:
+        # Strip the provider prefix for direct API calls
+        _, bare = model.split("/", 1)
+        return bare
+    return model
 
 logger = logging.getLogger(__name__)
 
@@ -676,8 +748,10 @@ def _llm_extract_entries(transcript):
     Returns list of dicts: {type, summary, content, training_value}
     Returns empty list on failure or if nothing worth preserving.
     """
-    if not _OPENROUTER_KEY:
-        logger.warning("icarus: no OpenRouter key — skipping LLM extraction")
+    api_key = _resolve_llm_api_key()
+    if not api_key:
+        logger.warning("icarus: no LLM API key found (checked ICARUS_API_KEY_ENV, "
+                        "DEEPSEEK_API_KEY, OPENROUTER_API_KEY) — skipping LLM extraction")
         return []
 
     prompt = (
@@ -701,7 +775,7 @@ def _llm_extract_entries(transcript):
     )
 
     payload = json.dumps({
-        "model": _EXTRACTION_MODEL,
+        "model": _resolve_llm_model(),
         "messages": [
             {"role": "system", "content": prompt},
             {"role": "user", "content": transcript[:8000]}
@@ -711,15 +785,11 @@ def _llm_extract_entries(transcript):
     }).encode("utf-8")
 
     try:
+        endpoint = _resolve_llm_endpoint()
         req = urllib.request.Request(
-            "https://openrouter.ai/api/v1/chat/completions",
+            endpoint,
             data=payload,
-            headers={
-                "Authorization": f"Bearer {_OPENROUTER_KEY}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://hermes-agent.local",
-                "X-Title": "Icarus Session Extraction"
-            }
+            headers=_resolve_llm_headers(api_key)
         )
         resp = urllib.request.urlopen(req, timeout=45)
         body = json.loads(resp.read().decode("utf-8"))
