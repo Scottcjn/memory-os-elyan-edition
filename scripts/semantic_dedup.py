@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
 semantic_dedup.py
-Scanner mensal de near-duplicates no knowledge_base_hybrid via cosine similarity.
+Scanner mensal de near-duplicates no knowledge_base via Qdrant HNSW index.
 Rodo no primeiro domingo de cada mês (cron: 0 3 1 * *).
 
 Regras:
 - Ignora coleções com prefixo em DEDUP_EXEMPT_PREFIXES (csv)
 - Não deleta automaticamente — apenas emite relatório JSON de candidatos
 - Threshold de similaridade: 0.92 (configurável)
-- Merge é feito em upserts via file_ingestion.py (pre-write dedup)
-- Este script faz o scan retroativo da coleção inteira
+- Usa query_batch_points() para delegar busca de vizinhos ao Qdrant
+  (HNSW index nativo, O(n/batch) requests em vez de O(n²) brute-force)
 
 Uso:
-  python3 semantic_dedup.py [--collection knowledge_base_hybrid] [--threshold 0.92] [--dry-run]
+  python3 semantic_dedup.py [--collection knowledge_base] [--threshold 0.92] [--dry-run]
 """
 
 import os
@@ -23,7 +23,13 @@ import argparse
 import requests
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Optional
+
+try:
+    from qdrant_client import QdrantClient, models
+    _has_qdrant_client = True
+except ImportError:
+    _has_qdrant_client = False
 
 # ─── Config ────────────────────────────────────────────────────────────────
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
@@ -132,45 +138,88 @@ def cosine_similarity(v1: List[float], v2: List[float]) -> float:
     return dot / (norm1 * norm2)
 
 
-def find_near_duplicates(chunks: List[Dict], threshold: float = SIMILARITY_THRESHOLD) -> List[Dict]:
+def find_near_duplicates(chunks: List[Dict],
+                         threshold: float = SIMILARITY_THRESHOLD,
+                         collection: str = COLLECTION) -> List[Dict]:
     """
-    Encontra pares de near-duplicates via brute-force cosine similarity.
-    Otimização: comparação triangular superior da matriz.
-    Retorna lista de {chunk_id_a, chunk_id_b, similarity}.
+    Encontra pares de near-duplicates via Qdrant query_batch_points.
+    Delega a busca de vizinhos ao índice HNSW nativo do Qdrant —
+    O(n/batch) HTTP requests em vez de O(n²) brute-force local.
+
+    Cada ponto consulta o Qdrant pelo vizinho mais próximo acima de
+    threshold, excluindo self-match via HasIdCondition no servidor.
     """
     n = len(chunks)
     if n < 2:
         return []
 
+    if not _has_qdrant_client:
+        log_message("⚠️ qdrant-client não instalado. Instale com: pip install qdrant-client")
+        log_message("   Fallback não disponível — pulando dedup.")
+        return []
+
+    client = QdrantClient(url=QDRANT_URL)
+    BATCH_SIZE = max(1, min(200, n // 10 + 1))  # escala com tamanho da coleção
     candidates = []
-    ids_seen = set()  # evita duplicados (A,B) e (B,A)
+    ids_seen = set()
 
-    for i in range(n):
-        for j in range(i + 1, n):
-            # Heurística rápida: pular se textos são muito diferentes em tamanho
-            text_len_i = len(chunks[i]["payload"].get("text", ""))
-            text_len_j = len(chunks[j]["payload"].get("text", ""))
-            if text_len_i > 0 and text_len_j > 0:
-                ratio = min(text_len_i, text_len_j) / max(text_len_i, text_len_j)
-                if ratio < 0.5:  # Tamanhos muito diferentes, skip
-                    continue
+    for batch_start in range(0, n, BATCH_SIZE):
+        batch = chunks[batch_start:batch_start + BATCH_SIZE]
 
-            sim = cosine_similarity(chunks[i]["vector"], chunks[j]["vector"])
-            if sim >= threshold:
-                pair_key = tuple(sorted([str(chunks[i]["id"]), str(chunks[j]["id"])]))
-                if pair_key not in ids_seen:
-                    ids_seen.add(pair_key)
-                    candidates.append({
-                        "chunk_id_a": chunks[i]["id"],
-                        "chunk_id_b": chunks[j]["id"],
-                        "similarity": round(sim, 6),
-                        "source_a": chunks[i]["payload"].get("source", "unknown"),
-                        "source_b": chunks[j]["payload"].get("source", "unknown"),
-                        "title_a": chunks[i]["payload"].get("title", "")[:60],
-                        "title_b": chunks[j]["payload"].get("title", "")[:60],
-                        "text_preview_a": chunks[i]["payload"].get("text", "")[:100],
-                        "text_preview_b": chunks[j]["payload"].get("text", "")[:100],
-                    })
+        requests_list = []
+        for p in batch:
+            point_id = p["id"]
+            vec = p.get("vector")
+            if vec is None:
+                continue
+            requests_list.append(
+                models.QueryRequest(
+                    query=vec,
+                    limit=1,
+                    score_threshold=threshold,
+                    filter=models.Filter(
+                        must_not=[
+                            models.HasIdCondition(has_id=[point_id])
+                        ]
+                    ),
+                    with_payload=True,
+                    with_vector=False,
+                )
+            )
+
+        if not requests_list:
+            continue
+
+        try:
+            results = client.query_batch_points(
+                collection_name=collection,
+                requests=requests_list,
+            )
+        except Exception as e:
+            log_message(f"❌ Erro query_batch_points (batch {batch_start}): {e}")
+            continue
+
+        # results is list[QueryResponse]; each has .points → list[ScoredPoint]
+        for p, query_resp in zip(batch, results):
+            scored_points = query_resp.points if hasattr(query_resp, 'points') else []
+            if not scored_points:
+                continue
+            best = scored_points[0]
+            pair_key = tuple(sorted([str(p["id"]), str(best.id)]))
+            if pair_key in ids_seen:
+                continue
+            ids_seen.add(pair_key)
+            candidates.append({
+                "chunk_id_a": str(p["id"]),
+                "chunk_id_b": str(best.id),
+                "similarity": round(best.score, 6),
+                "source_a": p["payload"].get("source", "unknown"),
+                "source_b": (best.payload or {}).get("source", "unknown"),
+                "title_a": p["payload"].get("title", "")[:60],
+                "title_b": (best.payload or {}).get("title", "")[:60],
+                "text_preview_a": p["payload"].get("text", "")[:100],
+                "text_preview_b": (best.payload or {}).get("text", "")[:100],
+            })
 
     # Ordenar por similaridade decrescente
     candidates.sort(key=lambda x: x["similarity"], reverse=True)

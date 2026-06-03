@@ -10,6 +10,7 @@ Usage:
 """
 
 import hashlib
+import sqlite3
 
 import argparse
 import os
@@ -19,6 +20,100 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 FABRIC_DIR = Path(os.environ.get("FABRIC_DIR", Path.home() / "fabric"))
+STATE_DB = Path(os.environ.get("STATE_DB_PATH", Path.home() / ".hermes" / "state.db"))
+
+# ── SQLite fabric index (avoids glob+parse on every retrieval) ──────────
+
+def _ensure_fabric_index(fabric_dir: Path) -> sqlite3.Connection:
+    """Return a connection to state.db with a fresh fabric_index table.
+
+    Creates fabric_index + fabric_fts (FTS5) if they don't exist.
+    Rebuilds the index when any fabric .md file has an mtime newer than
+    the latest stored mtime. Uses a transaction so a partial rebuild
+    won't leave the index inconsistent.
+    """
+    conn = sqlite3.connect(str(STATE_DB))
+    conn.row_factory = sqlite3.Row
+
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS fabric_index (
+            entry_id   TEXT PRIMARY KEY,
+            agent      TEXT NOT NULL,
+            type       TEXT,
+            title      TEXT,
+            body       TEXT,
+            timestamp  TEXT,
+            tags       TEXT,
+            project    TEXT,
+            tier       TEXT,
+            status     TEXT,
+            assigned_to TEXT,
+            refs       TEXT,
+            mtime      REAL NOT NULL,
+            file_path  TEXT NOT NULL
+        );
+        CREATE VIRTUAL TABLE IF NOT EXISTS fabric_fts
+            USING fts5(title, body, content=fabric_index, content_rowid=rowid);
+    """)
+    conn.commit()
+
+    # Check freshness
+    latest_db_mtime = conn.execute(
+        "SELECT COALESCE(MAX(mtime), 0) FROM fabric_index"
+    ).fetchone()[0]
+
+    latest_fs_mtime = 0.0
+    for d in (fabric_dir, fabric_dir / "cold"):
+        try:
+            for f in d.glob("*.md"):
+                mtime = f.stat().st_mtime
+                if mtime > latest_fs_mtime:
+                    latest_fs_mtime = mtime
+        except OSError:
+            pass
+
+    if latest_fs_mtime <= latest_db_mtime:
+        return conn  # index is fresh
+
+    # Rebuild in a transaction
+    conn.execute("BEGIN")
+    conn.execute("DELETE FROM fabric_index")
+    conn.execute("DELETE FROM fabric_fts")
+    for d in (fabric_dir, fabric_dir / "cold"):
+        try:
+            for f in d.glob("*.md"):
+                e = parse_entry(f)
+                if not e:
+                    continue
+                rel_path = str(f.relative_to(fabric_dir))
+                mtime = f.stat().st_mtime
+                conn.execute("""
+                    INSERT OR REPLACE INTO fabric_index
+                    (entry_id, agent, type, title, body, timestamp,
+                     tags, project, tier, status, assigned_to, refs,
+                     mtime, file_path)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """, (
+                    f"{e.get('agent','')}:{e.get('id','')}",
+                    e.get("agent", ""),
+                    e.get("type", ""),
+                    e.get("title", ""),
+                    e.get("_body", ""),
+                    e.get("timestamp", ""),
+                    e.get("tags", ""),
+                    e.get("project_id", e.get("project", "")),
+                    e.get("tier", ""),
+                    e.get("status", ""),
+                    e.get("assigned_to", ""),
+                    e.get("refs", ""),
+                    mtime,
+                    rel_path,
+                ))
+        except OSError:
+            pass
+    conn.commit()
+
+    return conn
 
 
 def _strip_generated_obsidian_sections(body: str) -> str:
@@ -283,15 +378,28 @@ def retrieve(query, max_results=5, max_tokens=2000, agent=None, project=None):
     if not FABRIC_DIR.exists():
         return []
 
-    # Scan all entries
+    # Use SQLite index instead of glob+parse
+    conn = _ensure_fabric_index(FABRIC_DIR)
+
+    rows = conn.execute("""
+        SELECT entry_id, agent, type, title, body, timestamp, tags,
+               project, tier, status, assigned_to, refs, mtime, file_path
+        FROM fabric_index
+        ORDER BY mtime DESC
+    """).fetchall()
+
+    if not rows:
+        return []
+
+    # Convert rows to entry dicts matching score_entry field names
     entries = []
-    for d in [FABRIC_DIR, FABRIC_DIR / "cold"]:
-        if not d.exists():
-            continue
-        for f in d.glob("*.md"):
-            e = parse_entry(f)
-            if e:
-                entries.append(e)
+    for row in rows:
+        e = dict(row)
+        e["_body"] = e.pop("body", "")
+        e["_file"] = e.get("file_path", "")
+        eid_parts = (e.get("entry_id") or ":").split(":", 1)
+        e["id"] = eid_parts[1] if len(eid_parts) > 1 else ""
+        entries.append(e)
 
     if not entries:
         return []
