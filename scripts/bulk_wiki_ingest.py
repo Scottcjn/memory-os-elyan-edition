@@ -16,6 +16,15 @@ from collections import Counter
 import aiohttp
 import asyncio
 
+# Sparse embedding (BM25) — optional, falls back to dense-only
+try:
+    from fastembed import SparseTextEmbedding
+    _sparse_model = SparseTextEmbedding(model_name="Qdrant/bm25")
+    _has_sparse = True
+except ImportError:
+    _sparse_model = None
+    _has_sparse = False
+
 # ─── Config ────────────────────────────────────────────────────────────────
 OPENROUTER_KEY = os.environ.get("OPENROUTER_API_KEY")
 QDRANT_URL = "http://localhost:6333"
@@ -70,7 +79,22 @@ def get_tags_from_frontmatter(meta: dict) -> list[str]:
     return tags if isinstance(tags, list) else []
 
 async def get_embedding(session: aiohttp.ClientSession, text: str) -> list[float] | None:
-    """Gera embedding via OpenRouter."""
+    """Gera embedding denso via OpenRouter."""
+
+
+def get_sparse_vector(text: str) -> dict | None:
+    """Gera sparse vector BM25 via fastembed (se disponível)."""
+    if not _has_sparse:
+        return None
+    try:
+        sparse_result = list(_sparse_model.embed([text]))[0]
+        return {
+            "indices": sparse_result.indices.tolist(),
+            "values": sparse_result.values.tolist(),
+        }
+    except Exception as e:
+        print(f"⚠️ Sparse embedding error: {e}")
+        return None
     payload = {
         "model": EMBEDDING_MODEL,
         "input": text[:MAX_TEXT_LEN],
@@ -123,11 +147,32 @@ async def main():
 
     connector = aiohttp.TCPConnector(limit=20)
     async with aiohttp.ClientSession(connector=connector) as session:
-        # Verificar coleção
+        # Verificar coleção — criar se não existir
         async with session.get(f"{QDRANT_URL}/collections/{COLLECTION}") as r:
             if r.status != 200:
-                print(f"❌ Coleção {COLLECTION} não existe!")
-                sys.exit(1)
+                print(f"⚠️  Coleção {COLLECTION} não existe. Criando...")
+                collection_config = {
+                    "vectors": {
+                        "dense": {
+                            "size": EMBEDDING_DIMS,
+                            "distance": "Cosine",
+                        }
+                    },
+                    "sparse_vectors": {
+                        "sparse": {},
+                    },
+                }
+                async with session.put(
+                    f"{QDRANT_URL}/collections/{COLLECTION}",
+                    headers={"Content-Type": "application/json"},
+                    json=collection_config,
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as cr:
+                    if cr.status not in (200, 201):
+                        body = await cr.text()
+                        print(f"❌ Falha ao criar coleção ({cr.status}): {body[:200]}")
+                        sys.exit(1)
+                print(f"✅ Coleção {COLLECTION} criada (dense {EMBEDDING_DIMS}d + sparse BM25)")
 
         print("\n🚀 Iniciando ingestão em batches...\n")
 
@@ -167,13 +212,20 @@ async def main():
                 embed_tasks = [get_embedding(session, b["embed_text"]) for b in batch]
                 vectors = await asyncio.gather(*embed_tasks)
 
+                # Gerar sparse vectors (sync, fastembed é CPU-bound)
+                sparse_vecs = [get_sparse_vector(b["embed_text"]) for b in batch]
+
                 # Preparar pontos Qdrant
                 points = []
-                for b, vec in zip(batch, vectors):
+                for b, vec, sparse in zip(batch, vectors, sparse_vecs):
                     if vec is None:
                         stats["fail"] += 1
                         errors.append(f"Embedding failed: {b['path']}")
                         continue
+
+                    vector_payload = {"dense": vec}
+                    if sparse is not None:
+                        vector_payload["sparse"] = sparse
 
                     # Heurística de importance_score baseada no path/nome
                     importance_score = 0.5
@@ -189,7 +241,7 @@ async def main():
                     
                     point = {
                         "id": str(uuid.uuid4()),
-                        "vector": {"dense": vec},
+                        "vector": vector_payload,
                         "payload": {
                             "text": b["embed_text"],
                             "source": b["source"],

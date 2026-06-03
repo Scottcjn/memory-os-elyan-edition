@@ -107,7 +107,7 @@ def resolve_timestamp(point: dict) -> str:
     """Return ISO 8601 string for created_at/last_accessed_at.
 
     Session points: use payload.timestamp (Unix epoch float).
-    Wiki points: locate file via payload.filename → file mtime.
+    Wiki points: locate file via payload.file_path → file mtime.
     Fallback: now().
     """
     pl = point.get("payload", {})
@@ -120,13 +120,11 @@ def resolve_timestamp(point: dict) -> str:
         except (ValueError, TypeError, OSError):
             pass
 
-    # Wiki point — resolve filename to filesystem path
-    filename = pl.get("filename", "")
+    # Wiki point — resolve file_path to filesystem
+    file_path = pl.get("file_path", "")
     source = pl.get("source", "")
-    if filename and source.startswith("wiki-"):
-        # Map source to subfolder: wiki-concepts → concepts, wiki-entities → entities, etc.
-        subfolder = source.replace("wiki-", "")
-        candidate = VAULT_ROOT / "wiki" / subfolder / f"{filename}.md"
+    if file_path and source.startswith("wiki-"):
+        candidate = Path(file_path)
         try:
             mtime = candidate.stat().st_mtime
             return datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()

@@ -103,11 +103,11 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) > 1 and sys.argv[1] == "--run-worker":
-        # Start ARQ worker (concurrency via max_jobs, not multi-process)
-        import subprocess
-        logger.info("Starting ARQ worker...")
-        subprocess.run(["arq", "main.WorkerSettings"])
+        from arq.worker import run_worker
+        logger.info("Starting ARQ worker (programmatic)...")
+        run_worker(WorkerSettings)
     else:
         print("Usage: python main.py --run-worker")
         print("")
-        print("To enqueue jobs, use the enqueue_host.py script")
+        print("To enqueue jobs via Redis, use the enqueue functions")
+        print("or the Hermes cron scripts in the scripts/ directory.")
