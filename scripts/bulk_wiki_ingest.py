@@ -78,9 +78,6 @@ def get_tags_from_frontmatter(meta: dict) -> list[str]:
         tags = [t.strip() for t in tags.split(",")]
     return tags if isinstance(tags, list) else []
 
-async def get_embedding(session: aiohttp.ClientSession, text: str) -> list[float] | None:
-    """Gera embedding denso via OpenRouter."""
-
 
 def get_sparse_vector(text: str) -> dict | None:
     """Gera sparse vector BM25 via fastembed (se disponível)."""
@@ -95,6 +92,10 @@ def get_sparse_vector(text: str) -> dict | None:
     except Exception as e:
         print(f"⚠️ Sparse embedding error: {e}")
         return None
+
+
+async def get_embedding(session: aiohttp.ClientSession, text: str) -> list[float] | None:
+    """Gera embedding denso via OpenRouter."""
     payload = {
         "model": EMBEDDING_MODEL,
         "input": text[:MAX_TEXT_LEN],
