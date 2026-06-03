@@ -116,14 +116,10 @@ def _ensure_fabric_index(fabric_dir: Path) -> sqlite3.Connection:
     return conn
 
 
-def _strip_generated_obsidian_sections(body: str) -> str:
-    body = re.sub(
-        r"\n*<!-- ICARUS_OBSIDIAN_LINKS_START -->.*?<!-- ICARUS_OBSIDIAN_LINKS_END -->\n*",
-        "\n",
-        body,
-        flags=re.DOTALL,
-    )
-    return body.strip()
+try:
+    from .parsing import parse_entry, _strip_generated_obsidian_sections
+except ImportError:
+    from parsing import parse_entry, _strip_generated_obsidian_sections
 
 STOP_WORDS = {"the", "a", "an", "is", "was", "are", "were", "be", "been", "being",
               "have", "has", "had", "do", "does", "did", "will", "would", "could",
@@ -143,44 +139,6 @@ CUSTOMER_WORDS = {"customer", "billing", "support", "ticket", "refund", "account
 
 HANDOFF_WORDS = {"handoff", "review", "reviewer", "pickup", "pending", "relay",
                  "assigned", "assignee", "revise", "revision", "feedback"}
-
-
-def parse_entry(filepath):
-    text = filepath.read_text(encoding="utf-8")
-    if not text.startswith("---"):
-        return None
-    parts = text.split("---", 2)
-    if len(parts) < 3:
-        return None
-    meta = {}
-    try:
-        import yaml
-        meta = yaml.safe_load(parts[1]) or {}
-    except Exception:
-        current_key = None
-        for line in parts[1].strip().split("\n"):
-            stripped = line.strip()
-            if stripped.startswith("- ") and current_key:
-                if not isinstance(meta.get(current_key), list):
-                    meta[current_key] = []
-                meta[current_key].append(stripped[2:].strip().strip("\"'"))
-            elif ": " in stripped and not stripped.startswith("-"):
-                k, v = stripped.split(": ", 1)
-                k = k.strip()
-                current_key = k
-                if v.startswith("[") and v.endswith("]"):
-                    meta[k] = [x.strip().strip("\"'") for x in v[1:-1].split(",") if x.strip()]
-                elif v.strip():
-                    meta[k] = v.strip()
-                else:
-                    meta[k] = []
-            elif stripped.endswith(":") and not stripped.startswith("-"):
-                current_key = stripped[:-1].strip()
-                meta[current_key] = []
-    meta["_body"] = _strip_generated_obsidian_sections(parts[2])
-    meta["_file"] = filepath.name
-    meta["_full"] = text
-    return meta
 
 
 def tokenize(text):

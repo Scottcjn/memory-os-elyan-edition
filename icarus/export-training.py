@@ -66,53 +66,10 @@ def _entry_quality(entry) -> dict:
     }
 
 
-def _strip_generated_obsidian_sections(body: str) -> str:
-    body = re.sub(
-        r"\n*<!-- ICARUS_OBSIDIAN_LINKS_START -->.*?<!-- ICARUS_OBSIDIAN_LINKS_END -->\n*",
-        "\n",
-        body,
-        flags=re.DOTALL,
-    )
-    return body.strip()
-
-
-def parse_entry(filepath):
-    """Parse a fabric markdown entry into a dict."""
-    text = filepath.read_text(encoding="utf-8")
-    if not text.startswith("---"):
-        return None
-    parts = text.split("---", 2)
-    if len(parts) < 3:
-        return None
-    meta = {}
-    try:
-        import yaml as _yaml
-        meta = _yaml.safe_load(parts[1]) or {}
-    except Exception:
-        lines = parts[1].strip().split("\n")
-        current_key = None
-        for line in lines:
-            stripped = line.strip()
-            if stripped.startswith("- ") and current_key:
-                if not isinstance(meta.get(current_key), list):
-                    meta[current_key] = []
-                meta[current_key].append(stripped[2:].strip().strip("\"'"))
-            elif ": " in stripped and not stripped.startswith("-"):
-                k, v = stripped.split(": ", 1)
-                k = k.strip()
-                current_key = k
-                if v.startswith("[") and v.endswith("]"):
-                    meta[k] = [x.strip().strip("\"'") for x in v[1:-1].split(",") if x.strip()]
-                elif v.strip():
-                    meta[k] = v.strip()
-                else:
-                    meta[k] = []
-            elif stripped.endswith(":") and not stripped.startswith("-"):
-                current_key = stripped[:-1].strip()
-                meta[current_key] = []
-    meta["body"] = _strip_generated_obsidian_sections(parts[2])
-    meta["file"] = filepath.name
-    return meta
+try:
+    from .parsing import parse_entry, _strip_generated_obsidian_sections
+except ImportError:
+    from parsing import parse_entry, _strip_generated_obsidian_sections
 
 
 def scan_all():
