@@ -149,17 +149,18 @@ ICARUS_TASK_MAX_CHARS=300
 
 ### 6. Core File Modifications
 
-Apply the additions documented in [setup/rulebook.md](rulebook.md) and
+Apply the additions documented in
+[setup/rulebook.md](rulebook.md) and
 [modifications/soul-rulebook.md](../modifications/soul-rulebook.md):
 
-**`~/.hermes/rulebook.md`** — append the Memory Architecture, Memory OS,
-and Mandatory Verifications sections from `setup/rulebook.md`.
+**`~/.hermes/rulebook.md`** — apply the three amendments from
+`modifications/execution-agent-protocol.md` (see `setup/rulebook.md`
+for a summary). Each amendment targets a specific section of the
+Execution Agent protocol — insert it after the referenced section.
 
-- Each block starts with a `## Memory OS Additions — v1` marker. Before
-  appending, check whether this line already exists in your rulebook —
-  if it does, skip that block.
-- If `~/.hermes/rulebook.md` doesn't exist yet, create it and add the
-  three marked blocks.
+- Each amendment starts with `<!-- Memory OS amendment — do not duplicate -->`.
+  Before applying, check whether this marker already exists in your
+  rulebook — if it does, skip that amendment.
 
 **`SOUL.md`** — add Ground Truth level 2 (injected memory) and context
 injection convention as documented in `modifications/soul-rulebook.md`.

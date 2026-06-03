@@ -1,53 +1,22 @@
-# Memory OS — rulebook.md additions
+# Memory OS — rulebook.md integration
 
-> **Version 1** — append these sections to `~/.hermes/rulebook.md`.
+> **Version 2** — amended for Execution Agent protocol compatibility.
 
-The marker `## Memory OS Additions — v1 (do not duplicate)` at the top of
-each block is an idempotency guard. Before appending, check whether this
-exact line already exists in your rulebook. If it does, skip that block.
+The Hermes Agent's rulebook (`~/.hermes/rulebook.md`) uses the **Execution Agent
+protocol** — a structured document with rules for execution discipline, not a
+generic append-only document. Standalone sections pasted into it break the
+protocol's structure.
 
----
+Instead, apply the **amendments** documented in
+[`modifications/execution-agent-protocol.md`](../modifications/execution-agent-protocol.md).
+These are formatted as insertions at specific points in the protocol:
 
-## Memory OS Additions — v1 (do not duplicate)
-
-## Memory Architecture
-
-The agent has 6 layers of persistent memory, each with a distinct purpose:
-
-| Layer | Tool | What it stores |
+| Amendment | Insert after | Content |
 |---|---|---|
-| Session | `session_search` | Past conversations (FTS5 over SQLite) |
-| Persistent | `memory` | MEMORY.md (volatile learnings) + USER.md (who the user is) |
-| Structured | `fact_store` | Durable facts with entity resolution (SQLite + HRR) |
-| Cross-agent | `fabric_*` | Session archive with structured summaries |
-| Procedural | `skill_view` / `skill_manage` | Reusable workflows |
-| Vector | Qdrant `knowledge_base` (4096d / Cosine) | Semantic search over sessions and wiki content |
+| Memory Architecture Integration | `## Memory Architecture` | Layer lookup guide + fact feedback rule |
+| Memory OS Infrastructure | `## Defaults` | Docker services, env vars, health endpoints |
+| Mandatory Verifications | `## Ground Truth` | Infrastructure health checks (level 5) |
 
-**Fact feedback rule:** When you retrieve a fact from `fact_store` (via
-probe, search, or reason) and reference it in your response, you MUST call
-`fact_feedback` in the same turn — `action='helpful'` if the fact was
-accurate and useful, `action='unhelpful'` if it was wrong, outdated, or
-irrelevant. This is not optional. The trust scoring system depends on it.
-Without feedback, `trust_score` is ornamental and fact quality degrades
-silently.
-
-## Memory OS Additions — v1 (do not duplicate)
-
-## Memory Operating System (Memory OS)
-
-Your memory infrastructure runs locally via Docker:
-- **Qdrant** (vector database, hybrid search: dense 4096d + BM25 sparse)
-- **Redis** (ARQ job queue for async embedding/indexing)
-- **ARQ Worker** (embedding pipeline, ingestion, decay scanning)
-
-These services are defined in the Memory OS docker-compose stack.
-
-## Memory OS Additions — v1 (do not duplicate)
-
-## Mandatory Verifications
-
-Before reporting a fact as true, verify against:
-1. **Runtime evidence** — terminal output, file existence, process status
-2. **Injected memory** — `[qdrant]`, `[fabric]`, `[sessions]`, `[facts]` in your prompt
-3. **Documentation** — man pages, official docs for installed version
-4. **Training knowledge** — never cite without verifying against 1-3
+Each amendment starts with `<!-- Memory OS amendment — do not duplicate -->`.
+Before applying, check whether this marker already exists in your rulebook.
+If it does, skip that amendment.

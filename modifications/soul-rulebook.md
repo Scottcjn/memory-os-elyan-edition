@@ -94,3 +94,45 @@ treat injected memory blocks as user context rather than authoritative
 prior knowledge. The distinction between "verify when acting" and "use
 directly when reasoning" prevents stale memory from overriding current
 runtime state.
+
+---
+
+## SOUL.md — Fact feedback rule
+
+Add this rule after the Memory Architecture section in SOUL.md:
+
+```markdown
+<!-- Memory OS additions — do not duplicate -->
+
+**Fact feedback rule:** When you retrieve a fact from `fact_store` (via
+probe, search, or reason) and reference it in your response, you MUST call
+`fact_feedback` in the same turn — `action='helpful'` if the fact was
+accurate and useful, `action='unhelpful'` if it was wrong, outdated, or
+irrelevant. This is not optional. The trust scoring system depends on it.
+Without feedback, `trust_score` is ornamental and fact quality degrades
+silently.
+```
+
+**Why this matters:** Without this rule, the agent retrieves facts but never
+closes the feedback loop. Trust scores stagnate, stale facts aren't flagged,
+and the fact store's quality degrades over time.
+
+---
+
+## SOUL.md — Honcho deprecation
+
+Add this note after the Memory Architecture section in SOUL.md:
+
+```markdown
+<!-- Memory OS additions — do not duplicate -->
+
+**Deprecated:** Honcho. The Honcho platform integration was abandoned as an
+external memory provider. The `heartbeat.py` cron job (which wrote metrics
+to Honcho) is disabled. Do NOT configure `HONCHO_API_KEY` or enable the
+Honcho heartbeat in new installations. Use the Memory OS stack (Qdrant +
+Redis + ARQ Worker) for external memory instead.
+```
+
+**Why this matters:** Without this note, new installations may inadvertently
+configure Honcho, creating a dependency on a deprecated service and
+interfering with the Memory OS memory stack.
