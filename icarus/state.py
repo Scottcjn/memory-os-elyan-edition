@@ -313,6 +313,11 @@ def write_entry(entry_type, content, summary, tier="hot", tags="", platform="cli
     ts = now.strftime("%Y-%m-%dT%H%MZ")
     ts_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     agent = AGENT_NAME or "agent"
+    if not AGENT_NAME:
+        logger.warning(
+            "icarus: HERMES_AGENT_NAME not set — fabric entries will use agent=\"agent\". "
+            "Set HERMES_AGENT_NAME=<name> in .env for multi-agent deployments."
+        )
     suffix = secrets.token_hex(2)
     # derive a short slug from the summary for human-readable filenames
     slug = re.sub(r"[^a-z0-9]+", "-", summary.lower().strip())[:40].strip("-")

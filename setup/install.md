@@ -165,6 +165,11 @@ Execution Agent protocol — insert it after the referenced section.
 **`SOUL.md`** — add Ground Truth level 2 (injected memory) and context
 injection convention as documented in `modifications/soul-rulebook.md`.
 
+**`~/.hermes/.env`** — set `HERMES_AGENT_NAME=hermes` (or any unique name).
+This distinguishes your agent in fabric entries and enables multi-agent
+handoff. Without it, all entries use the fallback `agent: "agent"` and
+cross-agent features are disabled.
+
 These modifications ensure the agent treats injected memory as more
 authoritative than training knowledge, and knows where to find
 persisted information without re-discovering it.
@@ -215,6 +220,9 @@ that keep the memory stack healthy. Copy them to a location of your choice
 | `pre_validator.py` | On-demand | Semantic linter — queries knowledge_base before I/O actions |
 | `reflection_trigger.py` | Every 5 min | Triggers micro_reflection when ARQ worker is idle |
 | `bulk_wiki_ingest.py` | One-shot | Initial bulk ingestion of existing wiki content |
+| `holographic-memory-backup.py` | Weekly (Mon 4am) | Dump and compress `memory_store.db` to backup directory |
+| `wiki-raw-ingest-monitor.py` | Twice/week (Mon/Thu 3am) | Detects new or drifted files in `raw/` vs FTS5 index |
+| `maas-heartbeat.py` | Every 6 hours | Health-check ping against Qdrant, Redis, and ARQ queue depth |
 
 **Using Hermes cron (recommended):**
 
@@ -244,6 +252,27 @@ hermes cron create \
   --name "semantic-dedup" \
   --schedule "0 3 1 * *" \
   --script /path/to/scripts/semantic_dedup.py \
+  --no-agent \
+  --deliver local
+
+hermes cron create \
+  --name "holographic-memory-backup" \
+  --schedule "0 4 * * 1" \
+  --script /path/to/scripts/holographic-memory-backup.py \
+  --no-agent \
+  --deliver local
+
+hermes cron create \
+  --name "wiki-raw-ingest-monitor" \
+  --schedule "0 3 * * 1,4" \
+  --script /path/to/scripts/wiki-raw-ingest-monitor.py \
+  --no-agent \
+  --deliver local
+
+hermes cron create \
+  --name "maas-heartbeat" \
+  --schedule "0 */6 * * *" \
+  --script /path/to/scripts/maas-heartbeat.py \
   --no-agent \
   --deliver local
 ```
@@ -307,3 +336,11 @@ Check: OpenRouter API key is set, `context_enhancer.py` can import, gateway rest
 
 ### Decay scanner produces "0 archived" every week
 Most likely: point payloads missing `last_accessed_at` or `importance_score` metadata. Run backfill before enabling decay.
+
+### Multiple collections in Qdrant dashboard
+
+The Memory OS uses the `knowledge_base` collection exclusively. Other
+collections you may see (e.g., from other Hermes agent plugins or standalone
+agents) are safe to coexist — Qdrant isolates each collection at the storage
+and query level. Do NOT delete collections you did not create — they may
+belong to other agents sharing the same Qdrant instance.
