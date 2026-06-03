@@ -100,6 +100,14 @@ COLLECTION_NAME=knowledge_base
 LOG_LEVEL=INFO
 EOF
 
+# Optional — if you want the Docker stack to use your existing production
+# directories instead of local test volumes, uncomment and set these:
+# MEMORY_OS_WIKI_PATH=/home/your-user/vault/wiki
+# MEMORY_OS_HERMES_HOME=/home/your-user/.hermes
+# MEMORY_OS_FABRIC_DIR=/home/your-user/vault/fabric
+# ⚠️  Do NOT set these to production paths unless you understand the risk.
+#     The worker mounts /fabric and /hermes as read-write.
+
 # Start the stack
 docker compose up -d
 ```

@@ -71,9 +71,9 @@ services:
       ARQ_KEEP_RESULT: "3600"
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
-      - ${WIKI_PATH:-./wiki}:/wiki:ro
-      - ${HERMES_HOME:-./hermes}:/hermes:rw
-      - ${FABRIC_DIR:-./fabric}:/fabric:rw
+      - ${MEMORY_OS_WIKI_PATH:-./wiki}:/wiki:ro
+      - ${MEMORY_OS_HERMES_HOME:-./hermes}:/hermes:rw
+      - ${MEMORY_OS_FABRIC_DIR:-./fabric}:/fabric:rw
 
 volumes:
   redis_data:
