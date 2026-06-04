@@ -1,7 +1,65 @@
-# Wiki Schema Template
+# Schema Templates
 
-This document defines the structure for wiki pages in the Memory OS knowledge base.
-Each page under `wiki/{concepts,entities,comparisons}/` should follow this structure.
+This document defines two complementary structures:
+
+1. **Memory Fact Schema** (Elyan taxonomy) — for durable, hand-written facts in
+   the workspace memory store. One file = one fact, typed and linked.
+2. **Wiki Schema** — for auto-curated knowledge pages under
+   `wiki/{concepts,entities,comparisons}/`.
+
+The fact store is *what the agent knows about its world*; the wiki is *what the
+agent has researched and organized*. Both feed recall. Both use frontmatter and
+`[[wikilink]]` associations so the memory store is a **graph, not a pile**.
+
+---
+
+## Memory Fact Schema (Elyan taxonomy)
+
+Each durable memory is **one file holding one fact**, with frontmatter:
+
+```yaml
+---
+name: short-kebab-case-slug
+description: one-line summary — used to decide relevance during recall
+metadata:
+  type: user | feedback | project | reference
+---
+```
+
+The body is the fact itself. For `feedback` and `project` types, follow the
+fact with **`Why:`** and **`How to apply:`** lines. Link related memories with
+`[[their-name]]` (the other memory's `name:` slug) — link liberally; a
+`[[name]]` that doesn't resolve yet marks something worth writing later.
+
+**The four types — choose by what the fact *is*, not where it came from:**
+
+| Type | What it captures | Example |
+|------|------------------|---------|
+| `user` | Who the operator is — role, expertise, durable preferences | "Operator is a SCADA + IT tech; prefers explicit, grounded answers." |
+| `feedback` | Corrections and confirmed approaches, **with the why** | "Re-read files before editing. **Why:** context decays mid-session." |
+| `project` | Ongoing work, goals, constraints not derivable from the code | "Migrating auth to Ed25519; node verifies pipe-string, not JSON." |
+| `reference` | Pointers to external resources (URLs, dashboards, tickets) | "Block explorer: https://… · Bounty queue: repo#12458" |
+
+**What NOT to store as a fact:** anything the repo already records (code
+structure, git history, past fixes, CONTRIBUTING docs) or anything that only
+matters to the current conversation. If asked to remember one of those, ask what
+was *non-obvious* about it and store that instead.
+
+**The index.** Every fact gets a one-line pointer in `MEMORY.md`
+(`- [Title](slug.md) — hook`). `MEMORY.md` is the lightweight index loaded each
+session; the fact files hold the detail. See [index.md](index.md).
+
+**Recall hygiene.** A recalled fact reflects what was true *when written*. If it
+names a file, flag, or version, verify it still exists before recommending it —
+see the [verify-before-recommend gate](../modifications/soul-rulebook.md).
+
+---
+
+## Wiki Schema Template
+
+The rest of this document defines the structure for wiki pages in the knowledge
+base. Each page under `wiki/{concepts,entities,comparisons}/` should follow this
+structure.
 
 ## Frontmatter
 

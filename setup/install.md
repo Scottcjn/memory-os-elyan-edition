@@ -151,7 +151,30 @@ EMBEDDING_DIMS=4096
 ICARUS_OBSIDIAN=1
 ICARUS_RESULT_MAX_CHARS=500
 ICARUS_TASK_MAX_CHARS=300
+
+# Optional — Non-bijunctive recall collapse (Elyan Edition)
+# ON by default. Unifies fabric+qdrant+sessions+facts into one salience-ranked
+# budget instead of emitting each source's fixed quota. See note below.
+# ICARUS_COLLAPSE=0                      # set to 0 to restore stock per-source emission
+# ICARUS_COLLAPSE_BUDGET=6               # max memories injected across ALL sources
+# ICARUS_COLLAPSE_PRUNE_RATIO=0.35       # keep candidates >= ratio * top salience
+# ICARUS_COLLAPSE_OVERLAP_WEIGHT=0.55    # lower => trust each source's own ranking more
+# ICARUS_COLLAPSE_RANK_DECAY=0.85        # within-source rank decay (earlier == stronger)
+# ICARUS_COLLAPSE_DUP_OVERLAP=0.82       # token overlap above which a duplicate is dropped
 ```
+
+**About recall collapse (behavior change vs stock Memory OS):** the Elyan
+Edition replaces the stock "emit every per-source quota" injection with a
+**non-bijunctive collapse** — all four sources compete in one salience-ranked
+pool, weak paths are pruned relative to the strongest, and a single
+cross-source budget is spent (see [Layer 7 / collapse](../layers/07-ground-truth.md)
+and `icarus/collapse.py`). This means the injected set is *smaller and
+re-selected every turn* compared to stock. It is **on by default**; set
+`ICARUS_COLLAPSE=0` to restore exact legacy behavior. If you find a
+strong-but-lexically-different memory being starved, lower
+`ICARUS_COLLAPSE_OVERLAP_WEIGHT` so each source's own ranking carries more
+weight. Collapse is **fail-open**: any internal error logs a warning and falls
+back to injecting the unchanged per-source results.
 
 **⚠️ Use absolute paths.** The Hermes gateway runs as a systemd service — `~` is not expanded. Always use `/home/your-user/...`.
 

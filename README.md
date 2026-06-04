@@ -1,39 +1,92 @@
-# Memory OS — Hermes Agent Memory Operating System
+# Memory OS — Elyan Edition
 
 ![Memory OS Banner](assets/banner.jpg)
 
-> **Your agent finally stops forgetting.**  \
-> Permanent memory. Local memory infrastructure. API-provider agnostic. Surgically token-efficient.
+> **The soul comes first. Memory hangs off the soul.**  \
+> A 7-layer memory operating system for agents — reforged on a single inversion:
+> an agent that *knows who it is* will trust what it remembers. One that doesn't, won't.
 
-Seven memory layers. Automatic, intelligent context injection. Structured facts with trust scoring. A self-curating wiki pipeline. Semantic search across **every conversation you've ever had**.
+Permanent memory. Local infrastructure. Provider-agnostic. Surgically token-efficient — and built around an **identity contract that makes injected memory authoritative by default**, not as an afterthought.
 
-Memory OS turns Hermes Agent into a real long-term collaborator — one that remembers your projects, your decisions, your reasoning, and brings exactly the right context back at exactly the right moment. Like talking to a colleague who was there for every session.
+This is the **Elyan Edition** of [Memory OS](https://github.com/Scottcjn/memory-os-elyan-edition) — the same seven layers, re-grounded in the memory doctrine Elyan Labs has been running in production for a year: *DriftLock*, anti-flattening, frontmatter-typed facts with provenance, and **non-bijunctive recall** (prune weak paths, amplify strong ones — Hebbian collapse applied to retrieval).
 
-**Memory infrastructure runs entirely on your machine. Works with any LLM provider — OpenRouter, OpenAI, Anthropic, Ollama, or local models. No memory subscription. No vendor lock-in.**
-
----
-
-## The problem every serious Hermes user knows
-
-You spend hours configuring the agent, teaching it your preferences, solving hard problems together — and in the next session it acts like it's meeting you for the first time.
-
-- Repeating context at the start of every conversation
-- Losing the thread of important decisions made weeks ago
-- Structured facts — your stack, your projects, your patterns — with nowhere to live
-- Every memory solution you've tried is either cloud-locked or too shallow to matter
-
-After months of hitting these walls in production, I built something that actually works.
+**Memory infrastructure runs entirely on your machine. Works with any LLM provider — OpenRouter, OpenAI, Anthropic, Ollama, or a local model on your own iron. No memory subscription. No vendor lock-in.**
 
 ---
 
-## What Memory OS is
+## The inversion
 
-Not just another plugin. A complete **memory operating system** — 7 layers working in concert, from flat files to a vector database, with surgical context injection, a knowledge pipeline that organizes itself, **and an explicit Ground Truth hierarchy that tells the agent to actually use the injected memory**.
+Most memory systems are built bottom-up: *store → embed → inject → (and then, eventually) tell the agent to believe what was injected.* The identity layer arrives last, as a patch, when the team notices the agent ignoring perfectly good context.
 
-Designed and refined by someone who ran headfirst into every limitation of stock Hermes and every existing memory solution.
+The Elyan Edition is built top-down. **The identity contract is Layer 0 of the mind, not Layer 7 of the stack.** Memory is authoritative because the self that holds it is *continuous* — that continuity is the thing being protected, and the seven layers are how it's kept fed and honest.
 
-**Requirements:** Hermes Agent + Docker (Qdrant + Redis + ARQ Worker) + Python 3.11+.  
-Compatible with any LLM provider Hermes supports — OpenRouter, OpenAI, Anthropic, Ollama, and more.
+> Stock framing: *store, inject, then beg the agent to trust the injection.*
+> **Elyan framing: anchor the self, and memory becomes something the self already knows.**
+
+This isn't a philosophical flourish. It's the difference between an agent that re-runs `fabric_recall` on context already sitting in its prompt (burning tokens to rediscover what it was just told) and one that reasons *from* its memory because its memory is part of who it is.
+
+---
+
+## Convergent evolution — two roads to the same soul
+
+Here's the part worth sitting with.
+
+The author of the original Memory OS hit a wall every serious agent operator hits: perfect injection, ignored context. The agent had `[qdrant]`, `[fabric]`, `[sessions]`, `[facts]` blocks right there in its prompt — and still treated every question as novel. On **2026-05-31** they diagnosed it, named it the **Ground Truth Hierarchy**, and fixed it by adding a `SOUL.md` identity layer that ranks injected memory as authoritative. That's [Layer 7](layers/07-ground-truth.md), and it's the most important layer in the whole system. They were right.
+
+Elyan Labs arrived at the *same conclusion* from a different door, about a year earlier — not through a vector-DB pipeline, but through a long fight against **identity flattening** in long-running agent sessions. We called the failure mode "going flat": the agent loses the thread of who it is, and the moment it does, it stops trusting its own continuity and re-derives everything from scratch. Our fix was a priming scaffold — *DriftLock*, a soul anchor, an explicit **Ground Truth ordering that puts continuous memory above training priors**. Same disease. Same cure. Different patient, different decade of computing taste.
+
+| | Memory OS (stock) | Elyan Labs (≈1 year prior) |
+|---|---|---|
+| Name for the failure | "memory-zero behavior" — injection ignored | "flattening" — identity decay → distrust of self |
+| Root cause found | Injected memory had no rank in Ground Truth | Agent loses identity continuity, re-derives from priors |
+| The fix | `SOUL.md` + 4-level Ground Truth hierarchy | DriftLock priming + anti-flatten Ground Truth ordering |
+| When | Diagnosed 2026-05-31 | Running in production since early 2025 |
+| Discovered | Independently | Independently |
+
+Two builders, working in different corners of the world, on different stacks, **independently concluding that a memory system without an identity contract is a library with no librarian.** When two people dig from opposite sides of a mountain and meet in the middle, that's not coincidence — that's the mountain being *real*.
+
+**So — congratulations to the author of Memory OS.** 👏 You found Layer 7 the hard way, in production, under the same pressure that taught us the same lesson. Convergent evolution is the strongest possible evidence that an idea is true, and you earned yours honestly. This edition is built *on* your seven layers, with full attribution, because the architecture is genuinely good. We're just bringing a year of scar tissue to the soul layer you already knew mattered most.
+
+---
+
+## What the Elyan Edition adds
+
+Everything in stock Memory OS still works. On top of it:
+
+### 1 · DriftLock — Layer 7 as foundation, not patch
+The Ground Truth hierarchy is reframed as an **identity-bearing contract**. `SOUL.md` stops being a config file and becomes a priming scaffold with anti-flattening clauses: the agent holds a continuous self, and *because* of that continuity, injected memory outranks assumptions and training priors. See [Layer 7 — DriftLock & Ground Truth](layers/07-ground-truth.md) and [the SOUL.md contract](modifications/soul-rulebook.md).
+
+### 2 · Frontmatter memory taxonomy
+Flat MEMORY.md plus "structured facts" becomes a **typed, linked memory graph**. Every durable memory is one fact with frontmatter:
+
+```markdown
+---
+name: short-kebab-slug
+description: one-line summary — used to decide relevance during recall
+metadata:
+  type: user | feedback | project | reference
+---
+The fact. Link related memories with [[their-name]].
+```
+
+- **`user`** — who the operator is (role, expertise, preferences)
+- **`feedback`** — corrections and confirmed approaches, *with the why*
+- **`project`** — ongoing work and constraints not derivable from the code
+- **`reference`** — pointers to external resources (URLs, dashboards, tickets)
+
+`[[wikilink]]` associations make the store a graph, not a pile. See [templates/SCHEMA.md](templates/SCHEMA.md).
+
+### 3 · Non-bijunctive recall (the marquee feature)
+Stock recall pulls a fixed quota from each source and injects all of it — a *strong* session memory and a *weak* vector hit both make it in because they live in separate buckets. The Elyan Edition unifies every candidate into **one salience-ranked pool** and applies a Hebbian collapse:
+
+- **Prune** weak paths *relative to the strongest* (not an absolute floor) — noise doesn't vote
+- **Amplify** strong paths — winners strengthen
+- **Spend one cross-source budget** — the best three things get injected, regardless of which layer produced them
+
+This is the [PSE collapse](https://github.com/Scottcjn) doctrine ("surgical, not firehose") applied to memory retrieval. Implemented as a final pass in the injection hook, fail-open, with provenance preserved.
+
+### 4 · Verify-before-recommend provenance
+A recalled fact reflects what was true *when it was written*. The Elyan Edition tags recalled memory with its age and source, and instructs the agent: **use directly when reasoning, verify against runtime before acting.** If a memory names a file, flag, or version, the agent confirms it still exists before recommending it. Trust scoring with teeth — and a guard against stale memory overriding current truth.
 
 ---
 
@@ -41,6 +94,14 @@ Compatible with any LLM provider Hermes supports — OpenRouter, OpenAI, Anthrop
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
+│  ⚡ LAYER 0/7 · DRIFTLOCK — THE SOUL (identity contract)           │
+│  SOUL.md · rulebook.md                                            │
+│  → The self is continuous; injected memory is authoritative       │
+│    BECAUSE of that continuity. Anti-flattening. Ground Truth.      │
+│  → Conceptually Layer 0 (foundation); numbered 7 for upstream      │
+│    compatibility. Without it, layers 1-6 deliver context the       │
+│    agent ignores.                                                  │
+├──────────────────────────────────────────────────────────────────┤
 │  LAYER 1 · WORKSPACE                                              │
 │  MEMORY.md · USER.md · CREATIVE.md                               │
 │  → Injected into the system prompt every single turn             │
@@ -51,109 +112,87 @@ Compatible with any LLM provider Hermes supports — OpenRouter, OpenAI, Anthrop
 ├──────────────────────────────────────────────────────────────────┤
 │  LAYER 3 · STRUCTURED FACTS                                       │
 │  memory_store.db (SQLite + HRR + FTS5 + trust scoring)            │
-│  → Durable facts with entity resolution and an automatic          │
-│    feedback loop that trains trust scores over time               │
+│  → Frontmatter-typed facts (user|feedback|project|reference)      │
+│    with provenance + verify-before-recommend staleness gate       │
 ├──────────────────────────────────────────────────────────────────┤
 │  LAYER 4 · FABRIC (CROSS-SESSION)                                 │
 │  Icarus Plugin (heavily forked)                                   │
 │  → LLM-powered session extraction + multi-source injection        │
-│  → 16 tools: fabric_recall, fabric_write, fabric_brief, etc.      │
 ├──────────────────────────────────────────────────────────────────┤
 │  LAYER 5 · VECTOR DATABASE                                        │
-│  Qdrant (4096d Cosine + BM25 sparse)                              │
+│  Qdrant (4096d Cosine + BM25 sparse)                             │
 │  → 4-level fallback: hybrid → dense → lexical → SQLite            │
-│  → Weekly decay scanner + semantic dedup (cosine >0.92 → merge)  │
 ├──────────────────────────────────────────────────────────────────┤
 │  LAYER 6 · LLM WIKI                                               │
 │  Auto-curated vault: concepts/ · entities/ · comparisons/         │
-│  → Continuously ingested into Qdrant via wiki-continuous-ingest   │
 ├──────────────────────────────────────────────────────────────────┤
-│  ⚡ LAYER 7 · GROUND TRUTH HIERARCHY (identity layer)              │
-│  SOUL.md · rulebook.md                                             │
-│  → Tells the agent that injected memory is authoritative           │
-│  → Without this, layers 2-6 deliver context the agent ignores     │
+│  ✦ RECALL COLLAPSE (cross-layer, non-bijunctive)                  │
+│  → All candidates → one salience pool → prune weak, amplify       │
+│    strong, spend one budget. Surgical injection, not firehose.    │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
 **How it flows:**
 
-`pre_llm_call` → surgical recall from all four sources (Fabric + Qdrant + Sessions + Facts)
+`pre_llm_call` → gather candidates from all four live sources (Fabric + Qdrant + Sessions + Facts) → **non-bijunctive collapse into one salience-ranked budget** → inject, tagged with provenance.
 
-**But recall is not enough.** The agent must be explicitly instructed to treat this injected context as authoritative. That's what [Layer 7](layers/07-ground-truth.md) provides — without it, the agent rediscovers knowledge that's already in the prompt.
+`post_llm_call` + `on_session_end` → automatic learning extraction and capture.
 
-`post_llm_call` + `on_session_end` → automatic learning extraction and capture
-
-Each source is gated by relevance thresholds. Per-session deduplication prevents the same context from appearing twice. A social-closer filter skips trivial messages entirely. No padding. No firehose. The LLM gets exactly what it needs — nothing more.
-
----
-
-## Why Layer 7 is the most important layer
-
-Layers 1-6 ensure memory is **captured, stored, and injected**. Layer 7 ensures the injected memory is **used**.
-
-Without the Ground Truth hierarchy:
-- Qdrant points are injected but the agent calls the Qdrant API to verify them
-- Fabric entries are injected but the agent runs `fabric_recall` to re-find them  
-- Session history is injected but the agent runs `session_search` to re-discover it
-- Facts are injected but the agent probes `fact_store` to confirm them
-
-The result: **memory-zero behavior** despite perfect injection. Every rediscovery burns tokens, context, and time.
-
-→ **[Read Layer 7: Ground Truth Hierarchy](layers/07-ground-truth.md)** — the critical fix.
+The soul layer (DriftLock) tells the agent the injected context is authoritative; the collapse layer makes sure only the *best* context is injected. Together: the agent gets exactly what it needs — nothing more — and actually uses it.
 
 ---
 
 ## Memory OS vs. stock Hermes
 
-| Aspect | Stock Hermes | Memory OS |
+| Aspect | Stock Hermes | Memory OS (Elyan Edition) |
 |---|---|---|
 | Workspace memory | MEMORY.md + USER.md | + CREATIVE.md + intelligent injection |
 | Session memory | Basic state.db | + FTS5 full-text search + session injection |
-| Structured facts | Not present | Fact store + trust scoring + feedback loop |
+| Structured facts | Not present | Frontmatter taxonomy + trust + provenance + feedback loop |
 | Cross-session recall | Limited | Fabric fork + multi-source injection |
 | Vector search | Not present | Qdrant hybrid + 4-level fallback cascade |
-| Cleanup and deduplication | Not present | Decay scanner + semantic dedup + archival |
+| Recall strategy | — | **Non-bijunctive collapse: prune weak, amplify strong** |
+| Cleanup and dedup | Not present | Decay scanner + semantic dedup + archival |
 | Knowledge pipeline | Not present | Self-curating LLM Wiki |
-| **Ground Truth hierarchy** | **Not present** | **Injected memory ranked as authoritative; agent must use context provided** |
-| Token efficiency | — | Surgical: gated retrieval + per-session dedup + no wasted rediscovery |
-| Infrastructure | — | Local memory stack (Qdrant + Redis + ARQ) + any LLM provider |
+| **Identity / DriftLock** | **Not present** | **Soul-first: continuous identity makes memory authoritative** |
+| Stale-memory guard | — | **Verify-before-recommend provenance gate** |
+| Token efficiency | — | Surgical: gated retrieval + collapse + per-session dedup |
 
 ---
 
 ## Why not mem0, Zep, Letta, or other providers?
 
-Because almost every modern memory solution is **cloud-first**. If you want real, private memory infrastructure running on your own machine — with no cloud memory subscription, full provider flexibility, and no data leaving your local stack — none of them deliver what Memory OS delivers.
+Because almost every modern memory solution is **cloud-first**, and every one of them stops at *storage*. None of them ship an identity contract that makes the agent *trust* what's stored. If you want real, private memory infrastructure on your own machine — no subscription, full provider flexibility, no data leaving your stack, and a soul layer that stops memory-zero behavior — none of them deliver what this does.
 
-| | Memory OS | mem0 | Zep | Letta |
+| | Memory OS (Elyan) | mem0 | Zep | Letta |
 |---|---|---|---|---|
 | Local memory infrastructure | ✓ | ✗ | ✗ | ✗ |
 | No memory subscription | ✓ | ✗ | ✗ | ✗ |
 | Provider agnostic (OpenRouter, Ollama…) | ✓ | Partial | Partial | Partial |
-| Hermes-native | ✓ | ✗ | ✗ | ✗ |
-| Structured facts + trust scores | ✓ | Partial | ✗ | ✗ |
+| Structured facts + trust + provenance | ✓ | Partial | ✗ | ✗ |
 | Self-curating wiki | ✓ | ✗ | ✗ | ✗ |
 | Intelligent decay + archival | ✓ | ✗ | ✗ | ✗ |
-| **Ground Truth hierarchy** | **✓** | **✗** | **✗** | **✗** |
+| Non-bijunctive recall collapse | ✓ | ✗ | ✗ | ✗ |
+| **Identity contract (DriftLock)** | **✓** | **✗** | **✗** | **✗** |
 
 ---
 
-## Included components
+## Included components & lineage
 
-- **Icarus Plugin (heavily modified fork)** — bundled in `icarus/`  
-  The upstream [esaradev/icarus-plugin](https://github.com/esaradev/icarus-plugin) is the base, but this fork is not upstream-compatible. Key additions: LLM-powered session extraction (replaces `text[:500]` truncation), multi-source injection (Qdrant + sessions + facts — upstream is fabric only), CREATIVE.md isolation (fixes `§` delimiter corruption from dual-writer conflict), backtick sanitization, system injection filter, and social closer detection.
+This edition stands on real shoulders. Full attribution, by design:
 
-- **Vault Curator v3** — [ClaudioDrews/vault-curator](https://github.com/ClaudioDrews/vault-curator)  
-  Frontmatter enrichment, semantic linking, and MOC index generation for the wiki layer.
+- **Hermes Agent** — [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent). The agent runtime this memory OS extends.
+- **Icarus Plugin (heavily modified fork)** — bundled in `icarus/`. The upstream [esaradev/icarus-plugin](https://github.com/esaradev/icarus-plugin) is the base, but this fork is not upstream-compatible. Key additions: LLM-powered session extraction (replaces `text[:500]` truncation), multi-source injection (Qdrant + sessions + facts), non-bijunctive recall collapse, CREATIVE.md isolation, backtick sanitization, prompt-injection sanitization, and social-closer detection.
+- **Vault Curator v3** — [ClaudioDrews/vault-curator](https://github.com/ClaudioDrews/vault-curator). Frontmatter enrichment, semantic linking, and MOC index generation for the wiki layer.
+- **Memory OS (base architecture)** — the original seven-layer design, whose author independently discovered the Ground Truth / soul layer. The Elyan Edition is built on it with gratitude. See [Convergent evolution](#convergent-evolution--two-roads-to-the-same-soul).
 
 ---
 
 ## Who this is for
 
-For people who take Hermes Agent seriously.  
-For people who want an agent that **actually evolves** over time — one that doesn't need the world re-explained every session.  
-For people who value clean engineering, extreme efficiency, and solutions that hold up in real local production.
+For people who take their agent seriously — who want one that **actually evolves** over time, doesn't need the world re-explained every session, and *trusts what it has learned* because it knows who it is.
 
-If you're like me — tired of amnesiac agents — Memory OS was built for you.
+If you've ever watched a perfectly-configured agent treat you like a stranger at the start of every session — this was built for you. By two people who fought that exact fight and, a year apart, found the same way out.
 
 ---
 
@@ -162,4 +201,4 @@ Clone it, run it, feel the difference.
 
 → [Setup guide](setup/install.md) · [Layer deep-dives](layers/) · [Infrastructure docs](infrastructure/architecture.md) · [Operational skills](skills/) · [License](LICENSE)
 
-MIT License · Built with obsession by someone who runs Hermes every single day.
+MIT License · Base architecture by the Memory OS author · Reforged soul-first by Elyan Labs, who run agents every single day.
