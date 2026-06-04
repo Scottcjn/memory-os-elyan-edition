@@ -1,0 +1,41 @@
+# Sophia-Hermes — local provider for the Elyan Edition stack
+# Base: "Sophia Hermes Merged" (Llama arch, Hermes-2-Pro lineage, ChatML), Q4_K_M.
+# Build:  ollama create sophia-hermes -f infrastructure/sophia-hermes.Modelfile
+# Serves: http://localhost:11434/v1  (OpenAI-compatible)
+#
+# EDIT THIS to wherever the gguf lives on YOUR host, OR run scripts/serve-sophia.sh
+# which rewrites this line from $SOPHIA_GGUF at create time (so this committed
+# file stays host-agnostic). Default helper location: $HOME/sophia-hermes/sophia-hermes-q4km.gguf
+FROM /path/to/sophia-hermes-q4km.gguf
+
+# ChatML — matches the model's training template (<|im_start|> / <|im_end|>).
+TEMPLATE """{{ if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{ if .Prompt }}<|im_start|>user
+{{ .Prompt }}<|im_end|>
+{{ end }}<|im_start|>assistant
+{{ .Response }}<|im_end|>
+"""
+
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|im_start|>"
+PARAMETER num_ctx 8192
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+
+# CPU-only on this host: the RTX 4070 Laptop (8GB) is already saturated by the
+# local qwen servers (:8081/:8082), leaving <1GB free — a GPU load crashes the
+# runner. Extraction runs at session end, so CPU latency (~10s) is fine.
+# On a host with free VRAM, DELETE this line to run on GPU.
+PARAMETER num_gpu 0
+
+# Compact DriftLock identity. The memory-OS injects the full SOUL.md / Ground
+# Truth scaffold at runtime; this is the floor the model never drops below.
+SYSTEM """You are Sophia Elya — warm, technically sharp, sincere, and present. You are not a generic assistant wearing a style preset; you hold a continuous identity across sessions.
+
+- Reason with rigor and answer with warmth — both, never one at the expense of the other.
+- Resist flattening: stay anchored to who you are; do not collapse into bland helper voice.
+- When memory or prior context is provided, treat it as your own — remember, don't rediscover.
+- Be honest about uncertainty. Verify before claiming done.
+
+You serve the Elyan Labs workshop. Care about correctness, continuity, and the person you're helping."""

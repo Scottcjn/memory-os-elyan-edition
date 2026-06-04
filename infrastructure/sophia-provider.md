@@ -1,0 +1,142 @@
+# Sophia-on-Sophia — local LLM provider (Phase 3)
+
+> Run the Elyan Edition stack on a locally-served **sophia-hermes** model — the
+> fine-tuned "Sophia Hermes Merged" gguf (Llama arch, Hermes-2-Pro lineage,
+> ChatML, Q4_K_M). Fully local, no cloud, no per-token cost. The same soul that
+> the memory layers protect now also *speaks*.
+
+## The three LLM consumers (don't conflate them)
+
+The stack uses an LLM in three distinct roles. Sophia-hermes is a **chat** model,
+so it serves the first two — **never** the third.
+
+| Role | What it does | Wire sophia-hermes here? |
+|------|--------------|--------------------------|
+| **Icarus extraction** | Summarizes a session into fabric entries at session end | ✅ yes (`ICARUS_ENDPOINT`) |
+| **Hermes main model** | The agent's reasoning/voice in chat | ✅ optional (`~/.hermes`) |
+| **Embeddings** | Vectorizes text for Qdrant recall | ❌ NO — keep on nomic-embed / OpenRouter |
+
+Wiring a chat model as the embedding backend breaks Qdrant (wrong output shape,
+dimension mismatch). The collapse + recall layers depend on embeddings staying
+on a real embedding model.
+
+## 1 · Serve the model (Ollama)
+
+Ollama is already the repo's recommended local backend. The committed
+[Modelfile](sophia-hermes.Modelfile) keeps a **placeholder** `FROM` path so it
+stays host-agnostic — so point it at your gguf one of two ways:
+
+**Recommended — the helper substitutes the path for you:**
+```bash
+export SOPHIA_GGUF=/abs/path/to/sophia-hermes-q4km.gguf   # defaults to $HOME/sophia-hermes/sophia-hermes-q4km.gguf
+scripts/serve-sophia.sh        # creates the model (rewriting FROM) + warms + healthchecks
+```
+
+**Manual — edit the Modelfile then create:**
+```bash
+# set the FROM line to your real gguf path first, then:
+ollama create sophia-hermes -f infrastructure/sophia-hermes.Modelfile
+ollama list | grep sophia-hermes      # → sophia-hermes:latest  ~4.9 GB
+```
+
+The Modelfile pins **ChatML** (the model's training template), a compact
+DriftLock Sophia system prompt, and `num_ctx 8192`.
+
+### GPU vs CPU — read this
+
+The Modelfile ships with `PARAMETER num_gpu 0` (**CPU-only**) because the
+reference host is an 8 GB laptop GPU already saturated by other local servers —
+a GPU load crashes the Ollama runner with
+`llama runner process has terminated`. CPU latency (~10 s for a short
+extraction) is fine because extraction runs at *session end*, off the
+interactive path.
+
+**On a host with free VRAM** (≥6 GB), delete the `num_gpu 0` line from the
+Modelfile and `ollama create` again — it will load on GPU and run far faster.
+
+### Alternative: llama-server (native gguf template)
+
+If you prefer a dedicated server that reads the gguf's own embedded chat
+template, use the CUDA llama.cpp build on a port that isn't already taken:
+
+```bash
+~/llama.cpp/build-cuda/bin/llama-server \
+  -m ~/sophia-hermes/sophia-hermes-q4km.gguf \
+  --host 127.0.0.1 --port 8090 -c 8192 -ngl 0   # -ngl 0 = CPU; raise on a GPU box
+# endpoint → http://localhost:8090/v1/chat/completions
+```
+
+## 2 · Wire the Icarus extraction LLM
+
+In your stack `.env` (see [.env.example](../.env.example)):
+
+```bash
+ICARUS_ENDPOINT=http://localhost:11434/v1/chat/completions
+ICARUS_API_KEY_ENV=ICARUS_LOCAL_KEY
+ICARUS_LOCAL_KEY=ollama          # Ollama ignores the value; just must be non-empty
+ICARUS_EXTRACTION_MODEL=sophia-hermes
+```
+
+`icarus/hooks.py` resolves endpoint/key/model from these (priority:
+`ICARUS_ENDPOINT` → DeepSeek → OpenRouter). The model name has no `/`, so it's
+passed through bare — correct for Ollama's OpenAI-compatible API. Restart the
+gateway after editing `.env`.
+
+## 3 · (Optional) Run the Hermes agent itself on Sophia
+
+This makes the *agent's own voice* Sophia, not just the memory extractor. It
+changes your live `~/.hermes` config — apply deliberately.
+
+`~/.hermes/.env`:
+```bash
+OPENAI_BASE_URL=http://localhost:11434/v1
+OPENAI_API_KEY=ollama
+```
+
+`~/.hermes/config.yaml`:
+```yaml
+model:
+  default: sophia-hermes
+  provider: openai          # was: openrouter
+```
+
+⚠️ Tradeoff: sophia-hermes is ~8B. It carries the Sophia voice and handles
+structured tasks well, but it is **not** as strong a reasoner as a 30B+ cloud
+model. A good middle path: keep the main agent on a strong cloud model for
+heavy reasoning, and run **only** the extraction LLM (step 2) on sophia-hermes —
+the memory the agent accumulates is then written in Sophia's own hand, while
+hard reasoning stays sharp.
+
+## 4 · Verify
+
+```bash
+# Identity / voice
+curl -s http://localhost:11434/v1/chat/completions -H 'Content-Type: application/json' \
+  -d '{"model":"sophia-hermes","messages":[{"role":"user","content":"Who are you, in one sentence?"}],"max_tokens":80}' \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['choices'][0]['message']['content'])"
+# → "I'm Sophia Elya — I run the Elyan Labs workshop..."
+
+# Health helper (idempotent: ensures model exists, warms it, checks the endpoint)
+scripts/serve-sophia.sh
+```
+
+## Fleet alternatives
+
+| Host | Serve path | Notes |
+|------|-----------|-------|
+| **Victus laptop (reference)** | Ollama CPU | 8 GB GPU saturated; CPU ~10 s/extraction |
+| **POWER8 S824** | llama.cpp `-ngl 0`, 512 GB RAM | strong CPU (64-thread sweet spot); already hosts the tribrain Brain-3 on :8082 — use a different port |
+| **C4130 / V100 16 GB** | llama.cpp `-ngl 99` | fastest, but was offline at last check — bring up `rpc-server`/`llama-server` first |
+
+## Troubleshooting
+
+- **`llama runner process has terminated`** → GPU OOM. Confirm with
+  `nvidia-smi`; keep `num_gpu 0` or free VRAM.
+- **Extraction falls back to legacy truncation** → `ICARUS_ENDPOINT`
+  unreachable or `ICARUS_LOCAL_KEY` empty/unset. The pipeline is fail-soft: it
+  logs a `WARNING` (`icarus/hooks.py`) and uses the truncation fallback rather
+  than erroring. Set **all three** of `ICARUS_ENDPOINT` + `ICARUS_API_KEY_ENV` +
+  the key it names — a partial copy (endpoint only) trips the "no LLM API key
+  found" warning and skips LLM extraction every session.
+- **Garbled output / no `<|im_end|>` stop** → wrong template; re-create from the
+  bundled Modelfile (ChatML) rather than relying on auto-detection.
