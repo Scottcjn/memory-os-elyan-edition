@@ -82,6 +82,32 @@ ICARUS_EXTRACTION_MODEL=sophia-hermes
 passed through bare — correct for Ollama's OpenAI-compatible API. Restart the
 gateway after editing `.env`.
 
+## 2b · Fully-local embeddings (complete the local stack)
+
+sophia-hermes covers the **chat** roles, but recall still needs an **embedding**
+model. Run that on Ollama too and the entire stack is local — no cloud, no key:
+
+```bash
+ollama pull nomic-embed-text
+```
+
+In your stack `.env`:
+```bash
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+# and make sure EMBEDDING_DIMS matches the Qdrant collection (nomic = 768)
+EMBEDDING_DIMS=768
+```
+
+⚠️ `EMBEDDING_DIMS` **must** match the dimension the Qdrant collection was
+created with. nomic-embed-text is 768-d; if your collection was built at 4096
+(the OpenRouter qwen3-embedding default) you must recreate it at 768 or vectors
+are silently rejected. Embeddings and chat are different models on different
+dimensions — never point `OLLAMA_EMBEDDING_MODEL` at `sophia-hermes`.
+
+With this + step 1, the full loop — embed → recall → collapse → extract — runs
+on your own iron: **Sophia remembers, recalls, and writes entirely locally.**
+
 ## 3 · (Optional) Run the Hermes agent itself on Sophia
 
 This makes the *agent's own voice* Sophia, not just the memory extractor. It

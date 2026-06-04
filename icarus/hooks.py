@@ -537,6 +537,18 @@ _COLLAPSE_PRUNE = _env_num("ICARUS_COLLAPSE_PRUNE_RATIO", _collapse.DEFAULTS["pr
 _COLLAPSE_DUP = _env_num("ICARUS_COLLAPSE_DUP_OVERLAP", _collapse.DEFAULTS["dup_overlap"], float)
 _COLLAPSE_WEIGHT = _env_num("ICARUS_COLLAPSE_OVERLAP_WEIGHT", _collapse.DEFAULTS["overlap_weight"], float)
 _COLLAPSE_DECAY = _env_num("ICARUS_COLLAPSE_RANK_DECAY", _collapse.DEFAULTS["rank_decay"], float)
+# Hebbian cross-source amplify knobs (corroboration boosts salience).
+_COLLAPSE_CORRO = _env_num("ICARUS_COLLAPSE_CORRO_OVERLAP", _collapse.DEFAULTS["corroboration_overlap"], float)
+_COLLAPSE_GAIN = _env_num("ICARUS_COLLAPSE_AMPLIFY_GAIN", _collapse.DEFAULTS["amplify_gain"], float)
+_COLLAPSE_CAP = _env_num("ICARUS_COLLAPSE_AMPLIFY_CAP", _collapse.DEFAULTS["amplify_cap"], float)
+# Observability: ICARUS_COLLAPSE_DEBUG=1 logs the salience-ranked pool (what
+# survived vs pruned, scores, cross-source corroboration) and a physical-entropy
+# attestation hash over the survivor set — making a recall decision auditable
+# and tamper-evident instead of a black box. (answers tri-brain Grok's
+# "unobservable new surface" concern, 2026-06-04)
+_COLLAPSE_DEBUG = os.environ.get("ICARUS_COLLAPSE_DEBUG", "0").strip().lower() in (
+    "1", "true", "yes", "on"
+)
 
 
 def _fabric_text(e):
@@ -554,6 +566,35 @@ def _qdrant_text(r):
 
 def _session_text(s):
     return f"{s.get('title', '')} {s.get('snippet', '')}".strip()
+
+
+def _log_collapse_debug(candidates, qtokens, survivors):
+    """Log the salience-ranked pool + a physical-entropy attestation over the
+    survivor set. Best-effort: never raises into the hot path."""
+    try:
+        kept_keys = {c.get("key") for c in survivors}
+        # Use the SAME tunables the real collapse used, or the debug log would
+        # report different salience/corroboration than the actual decision.
+        ranked = _collapse.score_all(
+            candidates, qtokens,
+            overlap_weight=_COLLAPSE_WEIGHT, rank_decay=_COLLAPSE_DECAY,
+            corroboration_overlap=_COLLAPSE_CORRO,
+            amplify_gain=_COLLAPSE_GAIN, amplify_cap=_COLLAPSE_CAP,
+        )
+        ranked.sort(key=lambda r: r["salience"], reverse=True)
+        logger.info("icarus collapse: %d candidates -> %d survivors",
+                    len(candidates), len(survivors))
+        for r in ranked:
+            c = r["candidate"]
+            mark = "KEEP" if c.get("key") in kept_keys else "prune"
+            logger.info("  [%-5s] %-8s sal=%.3f corro=%d %s",
+                        mark, str(c.get("source")), r["salience"],
+                        r["corroboration"], str(c.get("text", ""))[:48])
+        att = _collapse.attest(survivors)
+        logger.info("  attestation: %s (nonce %s…, %d survivors, %s)",
+                    att["hash"][:16], att["nonce"][:12], att["count"], att["algo"])
+    except Exception:
+        logger.debug("icarus: collapse debug logging failed", exc_info=True)
 
 
 def _apply_collapse(query, fabric, qdrant, sessions, facts):
@@ -603,8 +644,13 @@ def _apply_collapse(query, fabric, qdrant, sessions, facts):
             budget=_COLLAPSE_BUDGET, prune_ratio=_COLLAPSE_PRUNE,
             dup_overlap=_COLLAPSE_DUP, overlap_weight=_COLLAPSE_WEIGHT,
             rank_decay=_COLLAPSE_DECAY,
+            corroboration_overlap=_COLLAPSE_CORRO,
+            amplify_gain=_COLLAPSE_GAIN, amplify_cap=_COLLAPSE_CAP,
         )
         keep = {c["key"] for c in survivors}
+
+        if _COLLAPSE_DEBUG:
+            _log_collapse_debug(candidates, qtokens, survivors)
 
         # Defensive: if collapse returned nothing despite real candidates, do
         # NOT suppress everything — fall back to unchanged inputs.

@@ -161,7 +161,18 @@ ICARUS_TASK_MAX_CHARS=300
 # ICARUS_COLLAPSE_OVERLAP_WEIGHT=0.55    # lower => trust each source's own ranking more
 # ICARUS_COLLAPSE_RANK_DECAY=0.85        # within-source rank decay (earlier == stronger)
 # ICARUS_COLLAPSE_DUP_OVERLAP=0.82       # token overlap above which a duplicate is dropped
+# Hebbian cross-source amplify — a fact surfaced by 2+ sources is corroborated:
+# ICARUS_COLLAPSE_CORRO_OVERLAP=0.50     # cross-source overlap that counts as agreement
+# ICARUS_COLLAPSE_AMPLIFY_GAIN=0.15      # salience boost per corroborating hit (set 0 to DISABLE amplify -> base salience)
+# ICARUS_COLLAPSE_AMPLIFY_CAP=0.50       # max total boost fraction
+# ICARUS_COLLAPSE_DEBUG=1                # log ranked pool (keep/prune + scores) + attestation hash
 ```
+
+**Auditability:** with `ICARUS_COLLAPSE_DEBUG=1`, each collapse logs the
+salience-ranked pool (what survived vs pruned, scores, cross-source
+corroboration) plus a **physical-entropy attestation hash** (blake2b-256) over
+the survivor set — making each recall decision tamper-evident and proof-of-live.
+See `scripts/collapse_eval.py` for a stock-vs-collapse comparison with numbers.
 
 **About recall collapse (behavior change vs stock Memory OS):** the Elyan
 Edition replaces the stock "emit every per-source quota" injection with a

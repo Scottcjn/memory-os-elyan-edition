@@ -4,7 +4,10 @@ import os
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from icarus.collapse import tokenize, salience, collapse, DEFAULTS
+from icarus.collapse import (
+    tokenize, salience, score_all, collapse, DEFAULTS,
+    physical_entropy, attest, verify_attestation,
+)
 
 all_ok = True
 
@@ -80,6 +83,66 @@ check("empty query still returns survivors (no firehose, no blackout)", 0 < len(
 
 # DEFAULTS sanity
 check("DEFAULTS present", {"budget", "prune_ratio", "dup_overlap"} <= set(DEFAULTS))
+check("DEFAULTS has amplify knobs", {"corroboration_overlap", "amplify_gain", "amplify_cap"} <= set(DEFAULTS))
+
+# ── Hebbian cross-source amplify ──
+qh = tokenize("rustchain ed25519 attestation signature")
+# Same fact from TWO different sources (fabric + qdrant) should amplify; a lone
+# unrelated item should not. Corroboration counts cross-source only.
+corro_set = [
+    {"key": "fab", "source": "fabric", "text": "rustchain ed25519 attestation signature verified", "rank": 0},
+    {"key": "qdr", "source": "qdrant", "text": "rustchain ed25519 attestation signature verified", "score": 0.5, "rank": 0},
+    {"key": "lone", "source": "sessions", "text": "rustchain ed25519 attestation signature note", "rank": 0},
+]
+scored = {r["candidate"]["key"]: r for r in score_all(corro_set, qh)}
+check("cross-source corroboration counted", scored["fab"]["corroboration"] >= 1)
+check("corroboration amplifies salience above base", scored["fab"]["salience"] > scored["fab"]["base"])
+# same-source duplicates do NOT corroborate (must be cross-source)
+same_src = score_all([
+    {"key": "f1", "source": "facts", "text": "rustchain ed25519 attestation", "rank": 0},
+    {"key": "f2", "source": "facts", "text": "rustchain ed25519 attestation", "rank": 1},
+], qh)
+check("same-source agreement does NOT amplify", all(r["corroboration"] == 0 for r in same_src))
+# survivors carry _corroboration
+amp_out = collapse(corro_set, qh, budget=6)
+check("survivors annotated with _corroboration", all("_corroboration" in c for c in amp_out))
+
+# ── physical-entropy attestation ──
+ent = bytes(range(16))  # injected => deterministic for the test
+a1 = attest(amp_out, entropy=ent)
+check("attestation has hash+nonce+algo", {"hash", "nonce", "count", "algo"} <= set(a1))
+check("attestation algo is blake2b-256", a1["algo"] == "blake2b-256")
+check("attestation verifies for unchanged survivors", verify_attestation(amp_out, a1) is True)
+# tamper-evidence: drop a survivor => verification fails
+check("attestation FAILS when survivor set tampered", verify_attestation(amp_out[:-1], a1) is False if len(amp_out) > 1 else True)
+# order-independent commitment: shuffled survivors verify the same
+check("attestation order-independent", verify_attestation(list(reversed(amp_out)), a1) is True)
+# determinism: same survivors + same nonce => same hash
+check("attestation deterministic under fixed nonce", attest(amp_out, entropy=ent)["hash"] == a1["hash"])
+# physical entropy: live nonce is non-empty and (essentially always) varies
+e_a, e_b = physical_entropy(16), physical_entropy(16)
+check("physical_entropy returns requested length", len(e_a) == 16)
+check("physical_entropy is live (two draws differ)", e_a != e_b)
+# different selection => different commitment under same nonce
+other = collapse([{"key": "z", "source": "facts", "text": "unrelated power8 numa coffer", "rank": 0}], tokenize("power8 numa"))
+check("different selection => different hash", attest(other, entropy=ent)["hash"] != a1["hash"])
+
+# default (LIVE physical-entropy) attest path round-trips — exercises the impure
+# branch, not just the injected-entropy one.
+live = attest(amp_out)
+check("default attest path verifies round-trip", verify_attestation(amp_out, live) is True)
+check("default attest carries a live nonce", len(live["nonce"]) > 0 and live["nonce"] != a1["nonce"])
+
+# identity (not text/salience) is committed: two DISTINCT survivors with the
+# SAME source+text+salience but different keys must NOT cross-verify.
+twinA = [{"key": "A", "source": "facts", "text": "same text", "_salience": 0.5}]
+twinB = [{"key": "B", "source": "facts", "text": "same text", "_salience": 0.5}]
+attA = attest(twinA, entropy=ent)
+check("same source/text/salience but different key => different commitment",
+      verify_attestation(twinB, attA) is False)
+
+# physical_entropy clamps oversized requests instead of raising (blake2b max 64)
+check("physical_entropy clamps >64 without raising", 1 <= len(physical_entropy(200)) <= 64)
 
 # ── adapter tests: hooks._apply_collapse (the hot-path wiring) ──
 # Silence the fail-open WARNING+traceback that the intentional malformed-input
