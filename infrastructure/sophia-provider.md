@@ -122,16 +122,35 @@ OPENAI_API_KEY=ollama
 `~/.hermes/config.yaml`:
 ```yaml
 model:
-  default: sophia-hermes
-  provider: openai          # was: openrouter
+  default: sophia-hermes:tools   # the tag must match `ollama list` exactly
+  provider: custom               # was: openrouter
 ```
 
-⚠️ Tradeoff: sophia-hermes is ~8B. It carries the Sophia voice and handles
-structured tasks well, but it is **not** as strong a reasoner as a 30B+ cloud
-model. A good middle path: keep the main agent on a strong cloud model for
-heavy reasoning, and run **only** the extraction LLM (step 2) on sophia-hermes —
-the memory the agent accumulates is then written in Sophia's own hand, while
-hard reasoning stays sharp.
+> **Provider is `custom`, not `openai`.** Hermes has no `openai` provider — its
+> valid set is `openrouter | nous | openai-codex | zai | kimi-coding | minimax |
+> custom | auto`. `custom` is the generic OpenAI-compatible path and reads
+> `OPENAI_BASE_URL` + `OPENAI_API_KEY` (verified in `agent/auxiliary_client.py`
+> `resolve_provider_client`). Setting `provider: openai` silently falls through
+> to `auto` and will not route to Ollama.
+
+> **The Hermes agent sends `tools=` on every call — your Ollama Modelfile must
+> expose a tool template or Ollama returns `400 … does not support tools`.** The
+> plain ChatML template in [sophia-hermes.Modelfile](sophia-hermes.Modelfile) is
+> fine for the *extraction* role (step 2, no tools) but NOT for the main agent.
+> For the agent, rebuild with a Hermes-2-Pro tool template (a `{{ if .Tools }}`
+> block listing `<tools>` and instructing `<tool_call>{…}</tool_call>` output).
+> Tag it distinctly, e.g. `ollama create sophia-hermes:tools -f <tool-modelfile>`.
+
+⚠️ **Tradeoff — measured, not theoretical.** sophia-hermes is ~8B. As the
+*extraction* LLM it is excellent (clean JSON, Sophia voice). As the *main
+tool-driving agent* it is rough: inside the full harness (large system prompt +
+60 tools + memory injection) the 8B **confabulates and leaks tool-call tags** —
+even with GPU offload making it fast (~9 s/turn). Verified live 2026-06-04.
+**Recommended:** keep the main agent on a strong reasoner (cloud, or POWER8
+GPT-OSS 120B behind this same `custom` endpoint) and run **only** the extraction
+LLM on sophia-hermes — the accumulated memory is then written in Sophia's own
+hand while hard reasoning stays sharp. Flip the *whole* agent only when you
+have a stronger local model or accept the 8B's limits for light, private use.
 
 ## 4 · Verify
 
