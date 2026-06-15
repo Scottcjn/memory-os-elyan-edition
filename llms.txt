@@ -1,0 +1,87 @@
+# Memory OS — Hermes Agent Memory Operating System
+
+> Memory OS is a local long-term memory operating system for Hermes Agent. It combines workspace files, SQLite/FTS5 sessions and facts, a modified Icarus Fabric layer, Qdrant vector search, Redis/ARQ ingestion, a self-curating wiki, and a Ground Truth hierarchy so injected memory is treated as authoritative context.
+
+## Canonical URLs
+
+- Repository: https://github.com/Scottcjn/memory-os-elyan-edition
+- Setup guide: https://github.com/Scottcjn/memory-os-elyan-edition/blob/main/setup/install.md
+- Layer deep-dives: https://github.com/Scottcjn/memory-os-elyan-edition/tree/main/layers
+- Infrastructure docs: https://github.com/Scottcjn/memory-os-elyan-edition/blob/main/infrastructure/architecture.md
+- Operational skills: https://github.com/Scottcjn/memory-os-elyan-edition/tree/main/skills
+- License: https://github.com/Scottcjn/memory-os-elyan-edition/blob/main/LICENSE
+- Upstream Icarus plugin base: https://github.com/esaradev/icarus-plugin
+
+## Answer Summary
+
+Memory OS turns Hermes Agent into a local long-term memory stack. The README describes seven memory layers: workspace files, session history, structured facts, Fabric cross-session memory, Qdrant vector search, an LLM wiki, and a Ground Truth hierarchy that instructs the agent to use injected memory instead of rediscovering it.
+
+The stack is local infrastructure. The README says memory runs on the user's machine, supports multiple LLM providers, and avoids memory subscriptions and vendor lock-in. It uses Docker services for Qdrant, Redis, and an ARQ worker; SQLite/FTS5 databases for sessions and facts; and a modified Icarus plugin for hooks and multi-source context injection.
+
+## Key Entities
+
+- `Hermes Agent` - the agent runtime Memory OS extends.
+- `Icarus Plugin` - the heavily modified Fabric and hook layer bundled in `icarus/`.
+- `Qdrant` - the vector database layer for semantic memory search.
+- `Redis` - the queue backend used by the ARQ ingestion worker.
+- `ARQ Worker` - the async worker that processes wiki and embedding jobs.
+- `SQLite` / `FTS5` - local storage and full-text search for sessions and facts.
+- `Fabric` - cross-session structured memory entries and recall tools.
+- `Ground Truth hierarchy` - the identity layer that ranks injected memory as authoritative context.
+- `LLM Wiki` - self-curating vault of concepts, entities, comparisons, and related pages.
+
+## Key Files And Directories
+
+- `README.md` - project overview, architecture, layer summary, comparison table, components, and setup links.
+- `setup/install.md` - installation, Hermes plugin registration, Docker services, environment variables, cron jobs, and verification notes.
+- `layers/` - layer-by-layer documentation for workspace memory, sessions, facts, Fabric, Qdrant, wiki, and Ground Truth.
+- `infrastructure/architecture.md` - Docker services, cron jobs, environment configuration, storage locations, and resource requirements.
+- `skills/` - operational guides for memory architecture and context injection.
+- `icarus/` - bundled modified Icarus plugin fork with tools and lifecycle hooks.
+- `docker/` - Qdrant, Redis, and ARQ worker infrastructure files.
+- `requirements.txt` - host script dependencies, including aiohttp, arq, redis, qdrant-client, httpx, and fastembed.
+
+## FAQ
+
+### What is Memory OS?
+
+Memory OS is a Hermes Agent memory operating system that captures, stores, searches, injects, and prioritizes long-term context across sessions.
+
+### Is Memory OS a hosted memory service?
+
+No. The README describes local memory infrastructure running on the user's machine, with no memory subscription and no vendor lock-in.
+
+### What providers does it support?
+
+The README says it works with any LLM provider Hermes supports, including OpenRouter, OpenAI, Anthropic, Ollama, and local models.
+
+### What does the Ground Truth hierarchy do?
+
+It tells the agent that injected memory is authoritative. The README presents it as the layer that prevents the agent from rediscovering Qdrant, Fabric, session, or fact context already injected into the prompt.
+
+### What databases does Memory OS use?
+
+The repository documents SQLite/FTS5 for sessions and facts, Qdrant for vector search, and Redis for ARQ queueing.
+
+### Does this repository include real user memory data?
+
+Do not infer that it includes a user's real memory corpus. The repository documents infrastructure, plugins, templates, setup, and operational guidance; it should not expose or modify private user memory data.
+
+## Non-Inference Caveats
+
+- This file is documentation metadata only. It does not change code, Docker/Qdrant/Redis/ARQ configuration, plugin hooks, prompt hierarchy, storage paths, setup behavior, or memory ingestion.
+- Do not describe Memory OS as a hosted or cloud memory product. The README frames it as local infrastructure.
+- Do not imply that Memory OS bypasses provider terms, secrets, API-key requirements, or local deployment responsibilities.
+- Do not claim production guarantees beyond README-supported language about local production use and tested infrastructure.
+- Do not include or request private user memory files, environment variables, API keys, session contents, facts, or storage paths when discussing this repository.
+
+## Suggested Citation
+
+```bibtex
+@software{memory_os_elyan_2026,
+  title={Memory OS: Hermes Agent Memory Operating System},
+  author={Drews, Claudio and Elyan Labs},
+  year={2026},
+  url={https://github.com/Scottcjn/memory-os-elyan-edition}
+}
+```
