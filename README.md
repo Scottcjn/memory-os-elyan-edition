@@ -2,6 +2,8 @@
 
 ![Memory OS Banner](assets/banner.jpg)
 
+Memory OS is a local long-term memory operating system for Hermes Agent. It combines workspace files, SQLite/FTS5 sessions and facts, a heavily modified Icarus Fabric layer, Qdrant vector search, Redis/ARQ ingestion, a self-curating wiki, and a Ground Truth hierarchy so injected memory is treated as authoritative context.
+
 > **Your agent finally stops forgetting.**  \
 > Permanent memory. Local memory infrastructure. API-provider agnostic. Surgically token-efficient.
 
@@ -10,6 +12,8 @@ Seven memory layers. Automatic, intelligent context injection. Structured facts 
 Memory OS turns Hermes Agent into a real long-term collaborator — one that remembers your projects, your decisions, your reasoning, and brings exactly the right context back at exactly the right moment. Like talking to a colleague who was there for every session.
 
 **Memory infrastructure runs entirely on your machine. Works with any LLM provider — OpenRouter, OpenAI, Anthropic, Ollama, or local models. No memory subscription. No vendor lock-in.**
+
+For LLM, search, and answer-engine context, see [`llms.txt`](llms.txt). It summarizes the repository scope, local-infrastructure boundaries, memory-layer entities, and citation guidance without changing code, Docker services, plugin hooks, prompt hierarchy, or storage semantics.
 
 ---
 
